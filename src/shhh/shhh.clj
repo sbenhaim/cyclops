@@ -1,215 +1,498 @@
 (ns shhh.shhh
   "((((Tidal wave of parens))))"
-  (:require [overtone.osc :as osc]
-            [overtone.at-at :as at]))
+  (:require
+   [clojure.pprint :refer [pprint]]
+   [clojure.string :as s]
+   [clojure.math.numeric-tower :refer [lcm]]
+   [overtone.osc :as osc]
+   [overtone.music.pitch :as m]
+   [overtone.at-at :as at]))
 
--
+
+;; Constants
+
 (def default-port 57120)
 (def default-host "localhost")
-(def default-cps 0.5625)
-(def default-latency-s 0.1) ;; 1/10s
-(def freq-s 0.1) ;; 1/10s
+(def default-cps 5625/10000)
+(def default-latency-s 0.1)
+(def freq-s 1/10)
+
+;; Mutables
 
 (def cps (atom default-cps))
 (def cur-cycle (atom 0))
 (def start-time (atom nil))
+(def verbose (atom true))
+(def debug-osc (atom false))
 (def stop (atom false))
+(def shhh (atom false))
 
 (def pool (at/mk-pool))
 
-(def evts (atom []))
+(def loops (atom {1 []}))
+
+;; Util
+
+(defn cycle-n
+  [n seq]
+  (let [len (count seq)
+        n* (* n len)]
+    (take n* (cycle seq))))
+
+;; Dirt
 
 (def default-event
   {:_id_ (int 1)
    :s nil
-   :cps 0.5625
+   :cps (float default-cps)
    :cycle 0.0
    :delta 0.0
+   :room 0.0
+   :size 0.0
    :orbit (int 0)
    :n (int 0)
-   :latency 0.0})
+   :latency default-latency-s})
 
+
+;; (defmulti coerce-event first)
+
+;; (defmethod coerce-event :default [k v e]
+;;   (dissoc e k))
+
+;; (defmethod coerce-event :latency [k v e]
+;;   (update e k
+;;           #(-> e :whole (+ %) float)))
+
+;; (defmethod coerce-event :s [_ v _]
+;;   (name v))
+
+;; (defmethod coerce-event :delta [k v e]
+;;   (update e k float))
 
 (defn create-event
-  [event-map]
+  [{:keys [whole] :or {whole 0.0} :as event-map}]
   (-> default-event
       (merge event-map)
-      (update :latency #(+ % default-latency-s))
+      (update :latency #(-> % (+ whole) float)) ;; Remember the joy of live coding
+      (update :s name)
+      (update :n float)
+      (update :delta float)
       (select-keys (keys default-event))))
-
-
-(comment (create-event {:s "bd"}))
 
 
 (def osc-client (atom nil))
 
-(defn init-client!
-  ([] (init-client! default-port))
-  ([port] (init-client! default-host port))
-  ([host port] (when-not @osc-client (reset! osc-client (osc/osc-client host port)))))
-
 (defn send-event
   [event-map]
-  (apply osc/osc-send @osc-client
-         "/dirt/play"
-         (mapcat (fn [[k v]] [(name k) v]) event-map)))
+  (when @debug-osc (println event-map))
+  (try
+    (apply osc/osc-send @osc-client
+           "/dirt/play"
+           (mapcat (fn [[k v]] [(name k) v]) event-map))
+    (catch Exception e
+      (println (str "OSC ERROR: " (.getMessage e))))))
 
 
 (defn send-dirt
   [event-map]
-  (println "Sending: " event-map)
   (send-event (create-event event-map)))
 
+(comment (send-event {:s "bd" :whole 0 :order 1}))
 
 (defn throw-dirt [evts]
   (doseq [e evts] (send-dirt e)))
 
 
+;; Events, cycles loops
+
+
 (defn s->cycles
+  "Converts seconds to number of cyles based on current cps"
   [s]
   (* @cps s))
 
 
-(defn s->pos [s]
-  (let [abs (s->cycles s)
-        cycle (Math/floor abs)
-        rel (- abs cycle)]
-    [abs cycle rel]))
-
-
-(comment (s->pos 3))
-
-(comment
-  (reset! cps 0.5)
-  (s->pos 4.75))
-
-
-(defn dbl
-  [evts]
-  (->> evts
-       (map #(update % :whole inc))
-       (concat evts)
-       vec))
-
-
-(defn slice [evts from to]
-  (->> evts
-       (dbl)
-       (drop-while #(>= from (:whole %)))
-       (take-while #(> to (:whole %)))))
-
-
-
-(defn pos->s [pos]
+(defn pos->s
+  "Given a cycle-relative position, returns seconds based on current cps"
+  [pos]
   (/ (float pos) @cps))
 
 
-(defn time-evts [pos evts]
-  (mapv
-   #(let [rel    (:whole %)
-          offset (- rel pos)
-          s      (pos->s offset)
-          target (float s)]
-      (assoc % :latency target))
-   evts))
+(defn event?
+  [e]
+  (map? e))
 
 
-;; `@start-time` is when we started looping
-;; `now` is the current time
-;; `now - @start-time = delta` how long we've been looping
-;; `(s->pos delta)` is the periodic cycle position represented by `delta`
-;; `freq-s` is how far forward we sample events
-
-
-(defn tick!
-  []
-  (let [now (at/now)]
-    (when-not @start-time
-      (reset! start-time (inc now)))
-    (let [delta-s (/ (- now @start-time) 1000.0)
-          [_abs _cycle start]   (s->pos delta-s)
-          [len _cycle _rel]     (s->pos freq-s)
-          end     (+ start len)
-          slc     (slice @evts start end)
-          sched   (time-evts start slc)
-          lst     (-> sched last :latency)
-          nxt     (or lst freq-s)]
-      (when (seq sched)
-        (clojure.pprint/pprint
-         {:now   now
-          :delta delta-s
-          :start start
-          :end   end
-          :len   len
-          :slice slc
-          :sched sched})
-        (throw-dirt sched))
-      (when (not @stop)
-        (at/at (+ now (* nxt 1000)) #'tick! pool)))))
+(defn s->pos
+  "Modulated loop position based on number of seconds passed. Always will be < loop-order."
+  [s loop-order]
+  (let [n-cycles (s->cycles s) ;; how many cycles passed
+        modo (mod n-cycles loop-order)] ;; modulate to wrap around the loop
+    modo))
 
 
 (comment
-  (do
-    (reset! start-time nil)
-    (tick!)
-    (reset! stop true)))
+  (reset! cps 0.5)
+  (s->pos 4 [{:whole 1/3} {:whole 1}]))
 
 
-(defn start! []
-  (init-client!)
-  (reset! stop false)
-  (reset! start-time nil)
-  (#'tick!))
+(defn cycle-loop
+  "Like clojure.core/cycle but, moves events cyclically forward in time as it cycles"
+  ([loop-order evts] (cycle-loop nil loop-order evts))
+  ([n loop-order evts]
+   (let [loop (->> evts
+                   repeat
+                   (mapcat
+                    (fn [i cycle]
+                      (for [e cycle]
+                        (update e :whole #(+ % (* i loop-order)))))
+                    (iterate inc 0)))]
+     (if n
+       (take (* n (count evts)) loop)
+       loop))))
 
 
-(defn stop! []
+(comment (->> [{:whole 0} {:whole 3/2} {:whole 4}] (cycle-loop 3) (take 20)))
+
+
+(defn cycle-loops
+  "Turn a hashmap of {loop-order loop} into a hashmap of infinite lazy cycling loops.
+
+NOTE: Not currently used in favor of JIT cycling in `slice`. May improve performance."
+  [loops]
+  (into {}
+        (for [[loop-order evts] loops]
+          [loop-order (cycle-loop loop-order evts)])))
+
+
+(defn slice
+  "Given values `from` and `to` representing cycle-relative positions (i.e, produced by `s->pos`
+  returns a slice of a loop falling within the two points in time.
+
+  If `to` is > `loop-order`, the loop is (lazily) cycled to the length needed.
+
+  Cycle-relative times are offset by `from` to produce position-relative times for scheduling."
+  [[order loop] from to]
+  (assert (> to from))
+  (let [loop (if (> to order) (cycle-loop order loop) loop)]
+    (into []
+          (comp
+           (drop-while #(> from (:whole %)))
+           (take-while #(> to (:whole %)))
+           (map (fn [e] (update e :whole #(- % from)))))
+          loop)))
+
+
+
+
+(defn tick!
+  "Shhh's heartbeat. Takes a single value `now` representing the 'ideal' execution time (to avoid drift), then:
+
+  - Schedules itself for `now` plus `freq-s` (`next-tick`)
+  - Calculates time since start of looping
+  - Calculates events that should be scheduled between `now` and `next-tick` for each loop order (`slice`)
+  - Sends the OSC messages for slices.
+
+  NOTE: Position is currently calculated per order, which seems redundant, but
+  cycling the loops and maintaining and single order is probably worse for
+  performance.
+"
+  [now]
+  (let [next-tick (+ now (* freq-s 1000))
+        delta-s (/ (- now @start-time) 1000)]
+
+    (when-not @stop
+      (at/at next-tick #(tick! next-tick) pool))
+
+    (run!
+     (fn [[order loop]]
+       (do
+         (let [pos-from  (s->pos delta-s order)
+               slice-dur (s->pos freq-s order)
+               pos-to    (+ pos-from slice-dur)
+               slc       (slice [order loop] pos-from pos-to)]
+           ;; Todo: Convert note position to scheduling latency
+           (when (seq slc)
+             (when @verbose
+               (pprint
+                {:now       now
+                 :delta-s   delta-s
+                 :freq-s    freq-s
+                 :from      pos-from
+                 :to        pos-to
+                 :slice-len slice-dur
+                 :next-tick next-tick
+                 :slice     slc
+                 }))
+             (when-not @shhh
+               (throw-dirt slc))))))
+     @loops)))
+
+
+;; Loop Maths
+
+
+(defn shift
+  "Moves a collection of events by a cycle-relative offset."
+  [evts offset]
+  (for [e evts]
+    (if (event? e)
+      (update e :whole #(+ offset %))
+      (shift e offset))))
+
+
+(comment (shift [{:whole 0} [{:whole 1/2} {:whole 3/4}]] 1/4))
+
+
+(defn interleave-loops
+  "Combines loops of different order into a single loop of `lcm` order"
+  [[order-a loop-a] [order-b loop-b]]
+  (let [lcm (lcm order-a order-b)
+        ab  (concat (cycle-loop (/ lcm order-a) loop-a)
+                    (cycle-loop (/ lcm order-b) loop-b))
+        pat (sort-by :whole ab)]
+    pat))
+
+
+;; Patterns
+
+(defrecord TimingContext
+    [offset
+     offset-multiplier
+     loop-order
+     segment-order])
+
+
+(comment (ns-unmap *ns* 'time-events))
+
+(defmulti time-events
+  "Recursively applies timing information to pattern events based on pattern modifiers
+  (`slow`, `fast`, etc.)`"
+  (fn [[op & _events] & _args] op))
+
+(defmethod time-events :default [[op & events] ll sl offset]
+  {:op op
+   :events events
+   :loop-order ll
+   :segment-order sl
+   :offset offset})
+
+
+(defn assign-times
+  [events ^TimingContext tc]
+  (let [{:keys [offset offset-multiplier loop-order segment-order]} tc]
+    (map-indexed
+     (fn [i e]
+       (let [pos (+ offset (* i offset-multiplier))]
+         (if (event? e)
+           (assoc e :whole pos :order loop-order)
+           (time-events e loop-order segment-order pos))))
+     events)))
+
+
+(defmethod time-events :fast
+  [[op & evts] loop-order segment-order offset]
+  (let [n           (count evts)
+        segment-len (/ segment-order n)
+        tc          (->TimingContext offset
+                                     segment-len
+                                     loop-order
+                                     segment-len)]
+    (assign-times evts tc)))
+
+(defmethod time-events :slow
+  [[_op & evts] loop-order segment-order offset]
+  (let [n  (count evts)
+        tc (->TimingContext offset
+                            loop-order
+                            (* loop-order n)
+                            segment-order)]
+    (assign-times evts tc)))
+
+
+(defn untangle-loops
+  "After assigning event times to a pattern, converts nested loops of various order
+  into a hashmap of {loop-order loop}."
+  [tangled]
+  (->> tangled
+       flatten
+       (sort-by :whole)
+       (group-by :order)))
+
+
+(defn process-pattern
+  "Takes a pattern and returns a hashmap of {loop-order loop}."
+  [pat]
+  (-> pat
+      (time-events 1 1 0)
+      untangle-loops))
+
+;; Controls
+
+(defn init-client!
+  "Creates an osc client if one doesn't exist."
+  ([] (init-client! default-port))
+  ([port] (init-client! default-host port))
+  ([host port] (when-not @osc-client (reset! osc-client (osc/osc-client host port)))))
+
+
+
+(defn pause!
+  "Stops `tick!`, but does not reset the clock."
+  []
   (reset! stop true)
   (println "---STOPPED---"))
 
 
+(defn continue!
+  "unpauses"
+  []
+  (reset! stop false)
+  (tick! (at/now)))
 
-(defn fastcat
-  "Concatenates a series of events into `cycles` cycles starting at `offset`.
-Default behavior (cycles=1, offset=0) crams the events into one cycle."
-  ([pat-seq] (fastcat pat-seq 1 0))
-  ([pat-seq cycles offset]
-   (let [n (count pat-seq)
-         denom (* n cycles)]
-     (map-indexed (fn [idx evt] (assoc evt :whole (+ offset (/ idx denom)))) pat-seq))))
+
+(defn shhh!
+  "Stops sending events, but continues processing them."
+  []
+  (reset! shhh true))
+
+
+(defn speak!
+  "Un-shhhes"
+  []
+  (reset! shhh false))
+
+(defn set-pattern!
+  [pat]
+  (reset! loops (process-pattern pat)))
+
+
+(defn clear-pattern!
+  []
+  (reset! loops {}))
+
+
+(defn start!
+  "Starts/restarts Shhh.
+
+  - Inits OSC client if it hasn't been.
+  - Sets `stop` to false
+  - Starts tick at `now`
+
+  NOTE: Resets the clock.
+"
+
+  []
+  (init-client!)
+  (pause!)
+  (Thread/sleep (* freq-s 1000 2))
+  (continue!)
+  (speak!)
+  (reset! start-time (at/now))
+  (tick! @start-time))
+
+
+(defn restartt!
+  []
+  (clear-pattern!)
+  (start!))
+
+
+(defn play! [pat]
+  (set-pattern! pat)
+  (init-client!)
+  (speak!)
+  (continue!))
+
+(re-find #"(.*)(\d)" "c#4")
+
+(defn note
+  ([n]
+   (let [n      (name n)
+         o (re-find #"(.*)(\d)" n)]
+     (if o (note (second o) (-> o last parse-double))
+        (note n 4))))
+  ([n o]
+   (m/note (str (name n) o))))
+
+
+
+(re-find #"(.*)(\d)" "c")
+
+(comment (note :c#))
 
 
 (comment
-
-
-
-  (let [pat [{:s "bd"} {:s "sd"} {:s "sd"}]]
-    ;; (reset! evts (pat-seq->evts pat))
-    (reset! evts [{:s "supermandolin" :n 0.0 :whole 0} {:s "sd" :whole 1/4} {:s "sd" :whole 3/8} {:s "bd" :whole 1/2} {:s "sd" :whole 3/4}])
-    (reset! evts [{:s "supermandolin" :n 0.0 :whole 0 :delta 0.44444400072098}
-                  {:s "supermandolin" :n 9.0 :whole 1/4 :delta 0.44444400072098}
-                  {:s "supermandolin" :n 5.0 :whole 1/2 :delta 0.44444400072098}
-                  {:s "supermandolin" :n 4.0 :whole 3/4 :delta 0.44444400072098}])
-    (reset! cps 0.5)
-    (reset! stop false)
-    (reset! start-time nil)
-    (tick!))
-
-  (stop!)
-
-
-  (shhh)
-  (init-client!)
-
-  (send-dirt {:s "bd"})
-
-  (throw-dirt [{:s "bd"}])
-
   (start!)
+  (clear-pattern!)
+  (reset! debug-osc false)
+  (reset! verbose false)
+  (play!
+   (into [:fast] (for [n [:c :a :f :e]]
+                   {:s "superpiano" :n (note n 5) :delta 2.0 :size 0.7 :room 0.7})))
+  (shhh!)
+  (speak!)
+  (clear-pattern!)
 
-  (reset! evts [{:s "sd"} {:s "bd" :latency (/ @cps 2.0)}])
 
-  (set-cps! default-cps)
+  (send-dirt {:s "midi" :n (note :d#5) :delta 2.0})
 
-  (shhh)
 
-  @heartbeat)
+  )
+
+
+
+
+
+;; Pattern parsing
+
+
+(defn mini-parse
+  [e]
+  (cond
+    (= (type e) clojure.lang.Cons) (into [:slow] (mapv mini-parse e))
+    (coll? e) (into [:fast] (mapv mini-parse e))
+    (number? e) (-> e str keyword)
+    (symbol? e) (-> e name keyword)
+    :else (-> e name keyword)))
+
+
+(defn mini
+  [syms]
+  (let [pat (mapv mini-parse syms)]
+    (if (keyword? (first pat))
+      pat
+      (into [:fast pat]))))
+
+
+(defn str*
+  [& args]
+  (s/join " " args))
+
+
+(defn mini-str-parse
+  [e]
+  (cond
+    (= (type e) clojure.lang.Cons) (str "< " (apply str (mapv mini-str-parse e)) ">")
+    (coll? e) (str "[" (apply str* (mapv mini-str-parse e)) "]")
+    (number? e) (str e)
+    :else (-> e name str)))
+
+
+(defn mini-str
+  [syms]
+  (apply str* (mapv mini-str-parse syms)))
+
+
+(comment
+  ;; Options
+
+  (mini
+   `[(a c!4)/ 4 [b c] :{ 3 :} d])
+
+  (mini-str
+   `[<a c*4> [b c] :{ 3 :} d])
+
+
+  (send-dirt {:s :supermandolin :n 0.0 :delta 1.0})
+  ,)
