@@ -1,4 +1,4 @@
-(ns shhh.shhh
+(ns shhh.core
   "((((Tidal wave of parens))))"
   (:require
    [clojure.pprint :refer [pprint]]
@@ -6,7 +6,8 @@
    [clojure.math.numeric-tower :refer [lcm]]
    [overtone.osc :as osc]
    [overtone.music.pitch :as m]
-   [overtone.at-at :as at]))
+   [overtone.at-at :as at]
+   [shhh.ops :as ops]))
 
 
 ;; Constants
@@ -30,14 +31,6 @@
 (def pool (at/mk-pool))
 
 (def loops (atom {1 []}))
-
-;; Util
-
-(defn cycle-n
-  [n seq]
-  (let [len (count seq)
-        n* (* n len)]
-    (take n* (cycle seq))))
 
 ;; Dirt
 
@@ -256,58 +249,66 @@ NOTE: Not currently used in favor of JIT cycling in `slice`. May improve perform
 
 ;; Patterns
 
-(defrecord TimingContext
-    [offset
-     offset-multiplier
-     loop-order
-     segment-order])
 
 
-(comment (ns-unmap *ns* 'time-events))
+(comment
 
-(defmulti time-events
-  "Recursively applies timing information to pattern events based on pattern modifiers
-  (`slow`, `fast`, etc.)`"
-  (fn [[op & _events] & _args] op))
+  (defrecord TimingContext
+      [offset
+       offset-multiplier
+       loop-order
+       segment-order])
 
-(defmethod time-events :default [[op & events] ll sl offset]
-  {:op op
-   :events events
-   :loop-order ll
-   :segment-order sl
-   :offset offset})
+  (comment (ns-unmap *ns* 'apply-op))
 
+  ;; TODO: Replace with ops that only return tc and don't apply times
 
-(defn assign-times
-  [events ^TimingContext tc]
-  (let [{:keys [offset offset-multiplier loop-order segment-order]} tc]
-    (map-indexed
-     (fn [i e]
-       (let [pos (+ offset (* i offset-multiplier))]
-         (if (event? e)
-           (assoc e :whole pos :order loop-order)
-           (time-events e loop-order segment-order pos))))
-     events)))
+  (defmulti apply-op
+    "Given an op sub-pattern in the form of `[op & args & events]` and the the TimingContext from the
+  parent sub-pattern, returns the collection of events (without `op` and `args`) and a new
+  TimingContext for scheduling them."
+    (fn [[op & _args+events] _parent-context] op))
+
+  (defmethod apply-op :default [_subpat tc]
+    tc)
 
 
-(defmethod time-events :fast
-  [[op & evts] loop-order segment-order offset]
-  (let [n           (count evts)
-        segment-len (/ segment-order n)
-        tc          (->TimingContext offset
-                                     segment-len
-                                     loop-order
-                                     segment-len)]
-    (assign-times evts tc)))
 
-(defmethod time-events :slow
-  [[_op & evts] loop-order segment-order offset]
-  (let [n  (count evts)
-        tc (->TimingContext offset
-                            loop-order
-                            (* loop-order n)
-                            segment-order)]
-    (assign-times evts tc)))
+
+
+  (defn assign-times
+    ([sub-pattern] (assign-times sub-pattern ops/initial-context))
+    ([sub-pattern ^ops/TimingContext parent-context]
+     (let [[events ^ops/TimingContext tc] (ops/apply-op sub-pattern parent-context)]
+       (map-indexed
+        (fn [i e]
+          (let [pos (+ (:offset tc) (* i (:offset-multiplier tc)))]
+            (if (event? e)
+              (assoc e :whole pos :order (:loop-order tc))
+              (assign-times e (assoc tc :offset pos)))))
+        events)))))
+
+
+(comment
+  (defmethod apply-op :fast
+    [[_op & events] {:keys [offset loop-order segment-order]}]
+    (let [n                     (count events)
+          new-segment-order     (/ segment-order n)
+          new-offset-multiplier new-segment-order]
+      [events (->TimingContext offset
+                               new-offset-multiplier
+                               loop-order
+                               new-segment-order)]))
+
+
+  (defmethod apply-op :slow
+    [[_op & events] {:keys [loop-order segment-order offset]}]
+    (let [new-offset-multiplier loop-order
+          new-loop-order        (* loop-order (count events))]
+      [events (->TimingContext offset
+                               new-offset-multiplier
+                               new-loop-order
+                               segment-order)])))
 
 
 (defn untangle-loops
@@ -324,7 +325,7 @@ NOTE: Not currently used in favor of JIT cycling in `slice`. May improve perform
   "Takes a pattern and returns a hashmap of {loop-order loop}."
   [pat]
   (-> pat
-      (time-events 1 1 0)
+      (assign-times)
       untangle-loops))
 
 ;; Controls
@@ -484,15 +485,3 @@ NOTE: Not currently used in favor of JIT cycling in `slice`. May improve perform
   (apply str* (mapv mini-str-parse syms)))
 
 
-(comment
-  ;; Options
-
-  (mini
-   `[(a c!4)/ 4 [b c] :{ 3 :} d])
-
-  (mini-str
-   `[<a c*4> [b c] :{ 3 :} d])
-
-
-  (send-dirt {:s :supermandolin :n 0.0 :delta 1.0})
-  ,)

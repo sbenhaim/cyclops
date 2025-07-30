@@ -42,7 +42,7 @@ A recreation of the Tidal/Strudal mini notation.
 
 ## Mini Data Notation (minid)
 
-A port of mini notation into Clojure data to allow for easier programmatic limitation.
+A port of mini notation into Clojure data to allow for easier programmatic implementation and manipulation.
 
 ## Pattern Representation
 
