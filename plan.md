@@ -2,13 +2,22 @@
 
 - [x] Get coding agents involved
 - [-] Remove order for notes when untangling loops
-- [ ] Sampling synth with pitch control like superdough
-- [ ] Mix in Overtone music namespace
+- [ ] Core Tidal/Strudel stuff
+  - [x] OSC
+  - [x] Cycling timer
+  - [x] Event representation
+  - [x] Pattern representation
+  - [x] Pattern notation
+  - [ ] Pattern mixing
+  - [ ] Effects
+  - [ ] Oscillators
+  - [ ] ...
+- [/] Randomized events
+- [/] Sampling synth with pitch control like superdough
+- [/] Mix in Overtone music namespace
 - [x] Break out namespaces
 - [ ] More collection mangling/specter examples
 - [x] Implement */
-- [ ] Implement more Tidal/Strudel stuff
-  - [ ] Effects, etc
 - [/] Write tests
 - [ ] Live cps changes
 - [ ] Mini notation string
