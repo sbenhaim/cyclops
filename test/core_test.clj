@@ -1,64 +1,82 @@
 (ns test.core-test
   (:require [shhh.core :refer :all]
+            [shhh.pattern :refer [rep times cycle]]
             [expectations.clojure.test :refer [defexpect expect]]))
 
 
-(defexpect fast-op
-  (expect [{:s :bd :whole 0 :order 1} {:s :bd :whole 1/3 :order 1} {:s :bd :whole 2/3 :order 1}]
-          (assign-times [:fast {:s :bd} {:s :bd} {:s :bd}])))
+(defexpect test-s->cycles
+  (reset! cps 1)
+  (expect (s->cycles 0) 0)
+  (expect (s->cycles 1) 1)
+  (expect (s->cycles 1.5) 1.5)
 
-(defexpect slow-op
-  (expect [{:s :bd :whole 0 :order 3} {:s :bd :whole 1 :order 3} {:s :bd :whole 2 :order 3}]
-          (assign-times [:slow {:s :bd} {:s :bd} {:s :bd}])))
+  (reset! cps 2)
+  (expect (s->cycles 0) 0)
+  (expect (s->cycles 1) 2)
+  (expect (s->cycles 3/2) 3)
+
+  (reset! cps 1/2)
+  (expect (s->cycles 0) 0)
+  (expect (s->cycles 1) 1/2)
+  (expect (s->cycles 3/2) 3/4))
 
 
-(defexpect fast-nested-fast
-  (expect [{:s :bd :whole 0 :order 1}
-           [{:s :sd :whole 1/3 :order 1} {:s :sd :whole 1/2 :order 1}]
-           {:s :bd :whole 2/3 :order 1}]
-          (assign-times [:fast {:s :bd} [:fast {:s :sd} {:s :sd}] {:s :bd}])))
+(defexpect test-s->pos
+  (reset! cps 1)
+  (expect (s->pos 0 1) 0)
+  (expect (s->pos 1 1) 0)
+  (expect (s->pos 3/2 1) 1/2)
 
-(defexpect fast-nested-slow
-  (expect [{:s :bd :whole 0 :order 1}
-           [{:s :sd :whole 1/3 :order 2} {:s :sd :whole 4/3 :order 2}]
-           {:s :bd :whole 2/3 :order 1}]
-          (assign-times [:fast {:s :bd} [:slow {:s :sd} {:s :sd}] {:s :bd}])))
+  (reset! cps 1)
+  (expect (s->pos 1 2) 1)
+  (expect (s->pos 3/2 2) 3/2)
+  (expect (s->pos 5/2 2) 1/2)
 
-(defexpect slow-nested-slow
-  (expect [{:s :bd :whole 0 :order 3}
-           [{:s :sd :whole 1 :order 6} {:s :sd :whole 4 :order 6}]
-           {:s :bd :whole 2 :order 3}]
-          (assign-times [:slow {:s :bd} [:slow {:s :sd} {:s :sd}] {:s :bd}])))
+  (reset! cps 2)
+  (expect (s->pos 0 1) 0)
+  (expect (s->pos 1/4 1) 1/2)
+  (expect (s->pos 1 1) 0)
+  (expect (s->pos 3/2 1) 0)
 
-(defexpect slow-nested-fast
-  (expect [[{:s :bd :whole 0 :order 3} {:s :bd :whole 1/2 :order 3}]
-           {:s :sd :whole 1 :order 3}
-           {:s :bd :whole 2 :order 3}]
-          (assign-times [:slow [:fast {:s :bd} {:s :bd}] {:s :sd} {:s :bd}])))
+  (reset! cps 2)
+  (expect (s->pos 3/4 2) 3/2)
+  (expect (s->pos 1/2 2) 1)
+  (expect (s->pos 1 2) 0)
+  (expect (s->pos 5/4 2) 1/2)
 
-(defexpect fast-complex-nested
-  (expect [[{:s :sd :whole 0 :order 1} {:s :sd :whole 1/9 :order 1} {:s :sd :whole 2/9 :order 1}]
-           [{:s :bd :whole 1/3 :order 3} {:s :bd :whole 4/3 :order 3} {:s :bd :whole 7/3 :order 3}]
-           {:s :cr :whole 2/3 :order 1}]
-          (assign-times [:fast [:fast {:s :sd} {:s :sd} {:s :sd}] [:slow {:s :bd} {:s :bd} {:s :bd}] {:s :cr}])))
+  (reset! cps 1/2)
+  (expect (s->pos 5/4 2) 5/8)
+  (expect (s->pos 2 2) 1)
+  (expect (s->pos 3 2) 3/2)
+  (expect (s->pos 4 2) 0)
+  (expect (s->pos 5 2) 1/2))
 
-(defexpect slow-nested-fast-slow
-  (expect [{:s :bd :whole 0 :order 2}
-           [{:s :sd :whole 1 :order 2}
-            [{:s :hh :whole 3/2 :order 4} {:s :cr :whole 7/2 :order 4}]]]
-          (assign-times [:slow {:s :bd} [:fast {:s :sd} [:slow {:s :hh} {:s :cr}]]])))
+(defexpect test-slice
+  (expect (slice [1 [{:position 0 :s "a"} {:position 1/2 :s "b"}]] 0 1/2)
+          [{:position 0 :s "a"}])
+  (expect (slice [1 [{:position 0 :s "a"} {:position 1/2 :s "b"}]] 1/2 1)
+          [{:position 0 :s "b"}])
+  (expect (slice [1 [{:position 0 :s "a"} {:position 1/2 :s "b"}]] 1/2 3/2)
+          [{:position 0 :s "b"} {:position 1/2 :s "a"}])
+  (expect (slice [1 [{:position 0 :s "a"} {:position 1/2 :s "b"}]] 1/2 1/2)
+          [{:position 0 :s "b"} {:position 1/2 :s "a"}])
 
-(defexpect fast-nested-slow-fast
-  (expect [{:s :cc :whole 0 :order 1}
-           [{:s :bd :whole 1/2 :order 2}
-            [{:s :cr :whole 3/2 :order 2} {:s :hh :whole 7/4 :order 2}]]]
-          (assign-times [:fast {:s :cc} [:slow {:s :bd} [:fast {:s :cr} {:s :hh}]]])))
-
-(defexpect fast-complex-multi-nested
-  (expect [[{:s :sd :whole 0 :order 1} [{:s :sd :whole 1/6 :order 2} {:s :sd :whole 7/6 :order 2}]]
-           [[{:s :bd :whole 1/3 :order 2} [{:s :oh :whole 1/2 :order 4} {:s :ch :whole 5/2 :order 4}]] {:s :bd :whole 4/3 :order 2}]
-           {:s :cr :whole 2/3 :order 1}]
-          (assign-times [:fast
-                         [:fast {:s :sd} [:slow {:s :sd} {:s :sd}]]
-                         [:slow [:fast {:s :bd} [:slow {:s :oh} {:s :ch}]] {:s :bd}]
-                         {:s :cr}])))
+  (expect (slice [2 [{:position 0 :s "a"} {:position 1/2 :s "b"}
+                     {:position 1 :s "c"} {:position 3/2 :s "d"}]]
+                 0 1)
+          [{:position 0 :s "a"} {:position 1/2 :s "b"}])
+  (expect (slice [2 [{:position 0 :s "a"} {:position 1/2 :s "b"}
+                     {:position 1 :s "c"} {:position 3/2 :s "d"}]]
+                 1/2 3/2)
+          [{:position 0 :s "b"} {:position 1/2 :s "c"}])
+  (expect (slice [2 [{:position 0 :s "a"} {:position 1/2 :s "b"}
+                     {:position 1 :s "c"} {:position 3/2 :s "d"}]]
+                 1 5/2)
+          [{:position 0 :s "c"} {:position 1/2 :s "d"} {:position 1 :s "a"}])
+  (expect (slice [2 [{:position 0 :s "a"} {:position 1/2 :s "b"}
+                     {:position 1 :s "c"} {:position 3/2 :s "d"}]]
+                 3/4 1/2)
+          [{:position 1/4 :s "c"} {:position 3/4 :s "d"} {:position 5/4 :s "a"}])
+  (expect (slice [1 [{:position 0 :s "a"} {:position 1/2 :s "b"}]]
+                 1/2 3)
+          [{:position 0 :s "b"} {:position 1/2 :s "a"} {:position 1 :s "b"} {:position 3/2 :s "a"} {:position 2 :s "b"}]))

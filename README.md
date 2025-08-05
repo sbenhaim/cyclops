@@ -8,42 +8,60 @@ The `reference/` directory contains code bases for TidalCycles, Strudel (a JS va
 
 ## Cycle
 
-The smallest unit of repetition in a composition. Musical equivalent to a "bar."
+The smallest unit of repetition in a composition. Musical equivalent to a "bar." Always repeats at `cps` per second, naturally.
 
 ## Loop
 
-A collection of events representing a single loop iteration. May span multiple cycles. Does not contain any nested loops.
+A collection associated events with a common looping period (i.e, number of cycles). May span multiple cycles. Does not contain any nested loops (of differing periods).
 
 For instance, the following `pattern`:
 
-```tidal
-bd <sd cr>
+```clojure
+[:bd (cycle :sd :cr)]
 ```
 
 Can be considered two loops: `bd`, which repeats every 1 cycle on 0, and `sd cr`, which repeats every 2 cycles at 1/2 and 3/2.
 
-Or a single loop translated as: `<[bd sd] [bd cr]>`, which would sound identical but may be represented differently.
+Or a single loop translated as: `[(cycle :bd :sr) (cycle :bd :cr)]`, which would sound identical though would have a different internal representation.
+
+## Period
+
+The number of cycles represented by a loop.
 
 ## Event
 
 A single musical action having a discrete start and duration, typically converted to an OSC message and sent to Dirt/Dough (except for rests).
 
+Represented in shorthand as a keyword (`:bd`), string (`"cm7"`), number (`7`) or `fn` for dynamic, schedule-time events.
+
+## Event Shorthand
+
+Abbreviated representation of events as keywords, strings, numbers or fns. Converted to event maps during processing.
+
+## Event Maps
+
+Expanded event, which can be created explicitly or expanded from shorthand.
+
+## Segment
+
+A subdivision of a cycle into which events are scheduled.
+
+## Segment Weight
+
+An attribute of an event indicating how many segments it occupies. Default 1.
+
 ## Pattern
 
-A collection of loops which are simultaneously active.
+A collection of simultaneoulsy played loops.
 
-## Loop Order
-
-The number of cycles represented by a loop. Equivalent to 
-
-## Mini String Notation (minis)
+## Mini Notation (minis)
 
 A recreation of the Tidal/Strudal mini notation.
 
-## Mini Data Notation (minid)
+## Ops
 
-A port of mini notation into Clojure data to allow for easier programmatic implementation and manipulation.
+Operations applied to one or more events affecting timing or other attributes.
 
-## Pattern Representation
+## Pattern Notation
 
-The data schema of loops and events in its final form before passed to `shhh/process-pattern`, where timing and explicit loop orders are applied. Can be derived from `minis` or `minid` or produced directly (programatically) as well as manipulated at potentially finer grain than `minid`.
+Definition of patterns via pattern functions (representing ops), and events in shorthand notation or event maps.

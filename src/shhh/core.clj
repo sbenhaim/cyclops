@@ -1,13 +1,10 @@
 (ns shhh.core
   "((((Tidal wave of parens))))"
   (:require
-   [clojure.pprint :refer [pprint]]
-   [clojure.string :as s]
    [clojure.math.numeric-tower :refer [lcm]]
    [overtone.osc :as osc]
-   [overtone.music.pitch :as m]
    [overtone.at-at :as at]
-   [shhh.ops :as ops]))
+   [shhh.pattern :as pat]))
 
 
 ;; Constants
@@ -39,37 +36,24 @@
    :s nil
    :cps (float default-cps)
    :cycle 0.0
-   :delta 0.0
+   :delta 0.5
    :room 0.0
    :size 0.0
    :orbit (int 0)
    :n (int 0)
    :latency default-latency-s})
 
+(declare pos->s)
 
-;; (defmulti coerce-event first)
-
-;; (defmethod coerce-event :default [k v e]
-;;   (dissoc e k))
-
-;; (defmethod coerce-event :latency [k v e]
-;;   (update e k
-;;           #(-> e :whole (+ %) float)))
-
-;; (defmethod coerce-event :s [_ v _]
-;;   (name v))
-
-;; (defmethod coerce-event :delta [k v e]
-;;   (update e k float))
 
 (defn create-event
-  [{:keys [whole] :or {whole 0.0} :as event-map}]
+  [{:keys [position length] :or {position 0.0 length 1/2} :as event-map}]
   (-> default-event
       (merge event-map)
-      (update :latency #(-> % (+ whole) float)) ;; Remember the joy of live coding
+      (update :latency #(-> % (+ position) float)) ;; Remember the joy of live coding
       (update :s name)
       (update :n float)
-      (update :delta float)
+      (update :delta #(or % (pos->s length)))
       (select-keys (keys default-event))))
 
 
@@ -90,7 +74,7 @@
   [event-map]
   (send-event (create-event event-map)))
 
-(comment (send-event {:s "bd" :whole 0 :order 1}))
+(comment (send-event {:s "bd" :position 0 :period 1}))
 
 (defn throw-dirt [evts]
   (doseq [e evts] (send-dirt e)))
@@ -102,18 +86,18 @@
 (defn s->cycles
   "Converts seconds to number of cyles based on current cps"
   [s]
-  (* @cps s))
+  (* s @cps))
+
+
+(comment
+  (reset! cps 1/2)
+  (s->cycles 2))
 
 
 (defn pos->s
   "Given a cycle-relative position, returns seconds based on current cps"
   [pos]
   (/ (float pos) @cps))
-
-
-(defn event?
-  [e]
-  (map? e))
 
 
 (defn s->pos
@@ -123,10 +107,6 @@
         modo (mod n-cycles loop-order)] ;; modulate to wrap around the loop
     modo))
 
-
-(comment
-  (reset! cps 0.5)
-  (s->pos 4 [{:whole 1/3} {:whole 1}]))
 
 
 (defn cycle-loop
@@ -138,14 +118,14 @@
                    (mapcat
                     (fn [i cycle]
                       (for [e cycle]
-                        (update e :whole #(+ % (* i loop-order)))))
+                        (update e :position #(+ % (* i loop-order)))))
                     (iterate inc 0)))]
      (if n
        (take (* n (count evts)) loop)
        loop))))
 
 
-(comment (->> [{:whole 0} {:whole 3/2} {:whole 4}] (cycle-loop 3) (take 20)))
+(comment (->> [{:position 0} {:position 3/2} {:position 4}] (cycle-loop 3) (take 20)))
 
 
 (defn cycle-loops
@@ -166,16 +146,16 @@ NOTE: Not currently used in favor of JIT cycling in `slice`. May improve perform
 
   Cycle-relative times are offset by `from` to produce position-relative times for scheduling."
   [[order loop] from to]
-  (assert (> to from))
-  (let [loop (if (> to order) (cycle-loop order loop) loop)]
+  ;; (assert (> to from))
+  (let [to (if (<= to from) (+ to order) to)
+        loop (if (> to order) (cycle-loop order loop) loop)]
     (into []
           (comp
-           (drop-while #(> from (:whole %)))
-           (take-while #(> to (:whole %)))
-           (map (fn [e] (update e :whole #(- % from)))))
+           (drop-while #(> from (:position %)))
+           (take-while #(> to (:position %)))
+           (map (fn [e] (update e :position #(- % from))))
+           )
           loop)))
-
-
 
 
 (defn tick!
@@ -201,20 +181,21 @@ NOTE: Not currently used in favor of JIT cycling in `slice`. May improve perform
      (fn [[order loop]]
        (do
          (let [pos-from  (s->pos delta-s order)
-               slice-dur (s->pos freq-s order)
-               pos-to    (+ pos-from slice-dur)
+               slice-len (s->pos freq-s order)
+               ;; pos-to    (s->pos (/ next-tick 1000) order)
+               pos-to    (+ pos-from slice-len)
                slc       (slice [order loop] pos-from pos-to)]
            ;; Todo: Convert note position to scheduling latency
            (when (seq slc)
              (when @verbose
-               (pprint
+               (println
                 {:now       now
-                 :delta-s   delta-s
-                 :freq-s    freq-s
-                 :from      pos-from
-                 :to        pos-to
-                 :slice-len slice-dur
-                 :next-tick next-tick
+                 :delta-s   [delta-s (float delta-s)]
+                 :freq-s    [freq-s (float freq-s)]
+                 :from      [pos-from (float pos-from)]
+                 :to        [pos-to (float pos-to)]
+                 :slice-len [slice-len (float slice-len)]
+                 :next-tick [next-tick (float next-tick)]
                  :slice     slc
                  }))
              (when-not @shhh
@@ -225,90 +206,15 @@ NOTE: Not currently used in favor of JIT cycling in `slice`. May improve perform
 ;; Loop Maths
 
 
-(defn shift
-  "Moves a collection of events by a cycle-relative offset."
-  [evts offset]
-  (for [e evts]
-    (if (event? e)
-      (update e :whole #(+ offset %))
-      (shift e offset))))
-
-
-(comment (shift [{:whole 0} [{:whole 1/2} {:whole 3/4}]] 1/4))
-
-
 (defn interleave-loops
   "Combines loops of different order into a single loop of `lcm` order"
   [[order-a loop-a] [order-b loop-b]]
   (let [lcm (lcm order-a order-b)
         ab  (concat (cycle-loop (/ lcm order-a) loop-a)
                     (cycle-loop (/ lcm order-b) loop-b))
-        pat (sort-by :whole ab)]
+        pat (sort-by :position ab)]
     pat))
 
-
-;; Patterns
-
-
-
-(comment
-
-  (defrecord TimingContext
-      [offset
-       offset-multiplier
-       loop-order
-       segment-order])
-
-  (comment (ns-unmap *ns* 'apply-op))
-
-  ;; TODO: Replace with ops that only return tc and don't apply times
-
-  (defmulti apply-op
-    "Given an op sub-pattern in the form of `[op & args & events]` and the the TimingContext from the
-  parent sub-pattern, returns the collection of events (without `op` and `args`) and a new
-  TimingContext for scheduling them."
-    (fn [[op & _args+events] _parent-context] op))
-
-  (defmethod apply-op :default [_subpat tc]
-    tc)
-
-
-
-
-
-  (defn assign-times
-    ([sub-pattern] (assign-times sub-pattern ops/initial-context))
-    ([sub-pattern ^ops/TimingContext parent-context]
-     (let [[events ^ops/TimingContext tc] (ops/apply-op sub-pattern parent-context)]
-       (map-indexed
-        (fn [i e]
-          (let [pos (+ (:offset tc) (* i (:offset-multiplier tc)))]
-            (if (event? e)
-              (assoc e :whole pos :order (:loop-order tc))
-              (assign-times e (assoc tc :offset pos)))))
-        events)))))
-
-
-(comment
-  (defmethod apply-op :fast
-    [[_op & events] {:keys [offset loop-order segment-order]}]
-    (let [n                     (count events)
-          new-segment-order     (/ segment-order n)
-          new-offset-multiplier new-segment-order]
-      [events (->TimingContext offset
-                               new-offset-multiplier
-                               loop-order
-                               new-segment-order)]))
-
-
-  (defmethod apply-op :slow
-    [[_op & events] {:keys [loop-order segment-order offset]}]
-    (let [new-offset-multiplier loop-order
-          new-loop-order        (* loop-order (count events))]
-      [events (->TimingContext offset
-                               new-offset-multiplier
-                               new-loop-order
-                               segment-order)])))
 
 
 (defn untangle-loops
@@ -317,16 +223,9 @@ NOTE: Not currently used in favor of JIT cycling in `slice`. May improve perform
   [tangled]
   (->> tangled
        flatten
-       (sort-by :whole)
-       (group-by :order)))
+       (sort-by :position)
+       (group-by :period)))
 
-
-(defn process-pattern
-  "Takes a pattern and returns a hashmap of {loop-order loop}."
-  [pat]
-  (-> pat
-      (assign-times)
-      untangle-loops))
 
 ;; Controls
 
@@ -342,17 +241,18 @@ NOTE: Not currently used in favor of JIT cycling in `slice`. May improve perform
   "Stops `tick!`, but does not reset the clock."
   []
   (reset! stop true)
-  (println "---STOPPED---"))
+  (println "---PAUSED---"))
 
 
 (defn continue!
   "unpauses"
   []
-  (reset! stop false)
-  (tick! (at/now)))
+  (when @stop
+    (reset! stop false)
+    (tick! (at/now))))
 
 
-(defn shhh!
+(defn sh!
   "Stops sending events, but continues processing them."
   []
   (reset! shhh true))
@@ -365,7 +265,9 @@ NOTE: Not currently used in favor of JIT cycling in `slice`. May improve perform
 
 (defn set-pattern!
   [pat]
-  (reset! loops (process-pattern pat)))
+  (reset! loops (-> pat
+                    pat/process-pattern
+                    untangle-loops)))
 
 
 (defn clear-pattern!
@@ -385,15 +287,13 @@ NOTE: Not currently used in favor of JIT cycling in `slice`. May improve perform
 
   []
   (init-client!)
-  (pause!)
-  (Thread/sleep (* freq-s 1000 2))
-  (continue!)
   (speak!)
+  (reset! stop false)
   (reset! start-time (at/now))
   (tick! @start-time))
 
 
-(defn restartt!
+(defn restart!
   []
   (clear-pattern!)
   (start!))
@@ -401,30 +301,18 @@ NOTE: Not currently used in favor of JIT cycling in `slice`. May improve perform
 
 (defn play! [pat]
   (set-pattern! pat)
-  (init-client!)
   (speak!)
   (continue!))
 
-(re-find #"(.*)(\d)" "c#4")
-
-(defn note
-  ([n]
-   (let [n      (name n)
-         o (re-find #"(.*)(\d)" n)]
-     (if o (note (second o) (-> o last parse-double))
-        (note n 4))))
-  ([n o]
-   (m/note (str (name n) o))))
 
 
 
-(re-find #"(.*)(\d)" "c")
-
-(comment (note :c#))
 
 
 (comment
   (start!)
+
+  (reset! verbose false)
   (clear-pattern!)
   (reset! debug-osc false)
   (reset! verbose false)
@@ -440,48 +328,3 @@ NOTE: Not currently used in favor of JIT cycling in `slice`. May improve perform
 
 
   )
-
-
-
-
-
-;; Pattern parsing
-
-
-(defn mini-parse
-  [e]
-  (cond
-    (= (type e) clojure.lang.Cons) (into [:slow] (mapv mini-parse e))
-    (coll? e) (into [:fast] (mapv mini-parse e))
-    (number? e) (-> e str keyword)
-    (symbol? e) (-> e name keyword)
-    :else (-> e name keyword)))
-
-
-(defn mini
-  [syms]
-  (let [pat (mapv mini-parse syms)]
-    (if (keyword? (first pat))
-      pat
-      (into [:fast pat]))))
-
-
-(defn str*
-  [& args]
-  (s/join " " args))
-
-
-(defn mini-str-parse
-  [e]
-  (cond
-    (= (type e) clojure.lang.Cons) (str "< " (apply str (mapv mini-str-parse e)) ">")
-    (coll? e) (str "[" (apply str* (mapv mini-str-parse e)) "]")
-    (number? e) (str e)
-    :else (-> e name str)))
-
-
-(defn mini-str
-  [syms]
-  (apply str* (mapv mini-str-parse syms)))
-
-

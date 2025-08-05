@@ -1,19 +1,19 @@
 # Shhh Plan
 
-- [ ] Get coding agents involved
-- [ ] Remove order for notes when untangling loops
+- [x] Get coding agents involved
+- [-] Remove order for notes when untangling loops
 - [ ] Sampling synth with pitch control like superdough
 - [ ] Mix in Overtone music namespace
-- [ ] Break out namespaces
+- [x] Break out namespaces
 - [ ] More collection mangling/specter examples
-- [ ] Implement */
+- [x] Implement */
 - [ ] Implement more Tidal/Strudel stuff
   - [ ] Effects, etc
-- [ ] Write tests
+- [/] Write tests
 - [ ] Live cps changes
 - [ ] Mini notation string
-- [ ] Mini notation macro/data
-- [ ] Data notation
+- [x] Mini notation macro/data
+- [x] Data notation
 - [ ] Docs and examples
 - [ ] Videos
 - [ ] LLM support (LLM help docs)
