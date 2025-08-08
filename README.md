@@ -1,6 +1,6 @@
 # Shhh
 
-Implementation of TidalCycles / Strudel, but taking advantage of Clojure's lisp syntax and collection manipulation capabilities.
+Tidal / Strudel but in Clojure + Overtone.
 
 # Terminology
 
@@ -21,6 +21,8 @@ For instance, the following `pattern`:
 Can be considered two loops: `bd`, which repeats every 1 cycle on 0, and `sd cr`, which repeats every 2 cycles at 1/2 and 3/2.
 
 Or a single loop translated as: `[(cycle :bd :sr) (cycle :bd :cr)]`, which would sound identical though would have a different internal representation.
+
+Loops are represented as a vector `[period events]`.
 
 ## Period
 

@@ -5,3 +5,7 @@
   (let [len (count seq)
         n* (* n len)]
     (take n* (cycle seq))))
+
+
+(defn toggle! [a]
+  (swap! a not))

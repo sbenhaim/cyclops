@@ -8,18 +8,20 @@
   - [x] Event representation
   - [x] Pattern representation
   - [x] Pattern notation
-  - [ ] Pattern mixing
-  - [ ] Effects
+  - [x] Pattern mixing
+  - [x] Euc
+  - [ ] Splice as default for []s?
+  - [/] Effects
   - [ ] Oscillators
-  - [ ] ...
-- [/] Randomized events
+  - [ ] Tidal/strudel reference
+- [x] Randomized events
 - [/] Sampling synth with pitch control like superdough
-- [/] Mix in Overtone music namespace
+- [x] Mix in Overtone music namespace
 - [x] Break out namespaces
 - [ ] More collection mangling/specter examples
 - [x] Implement */
-- [/] Write tests
-- [ ] Live cps changes
+- [x] Write tests
+- [x] Live cps changes
 - [ ] Mini notation string
 - [x] Mini notation macro/data
 - [x] Data notation

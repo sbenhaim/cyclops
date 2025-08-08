@@ -1,66 +1,49 @@
 (ns shhh.play
-  (:require [shhh.core :refer
-             [start!
-              restart!
-              play!
-              pause!
-              continue!
-              sh!
-              speak!
-              set-pattern!
-              verbose
-              cps
-              freq-s] :as sh]
-            [shhh.music :refer [note]]
-            [shhh.pattern :refer
-             [fit
-              times
-              cycle
-              slow
-              splice
-              rep
-              elongate
-              prob
-              euclid
-              stack
-              rnd] :as p]
-            [shhh.util :refer [cycle-n]]))
+  (:require [shhh.core :refer [start! restart! play! pause! continue! sh! speak! set-pattern! verbose cps freq-s o loops] :as sh]
+            [shhh.music
+             :refer [cycle-chord note cycle-scale]
+             :rename {cycle-chord cc note n cycle-scale cs}
+             :as m]
+            [shhh.looping :as l]
+            [shhh.pattern
+             :refer [fit times cycle slow splice rep elongate prob euclid stack pick]
+             :rename {fit f times x cycle cyc slow slw splice spl elongate el prob ? euclid euc stack s}
+             :as p]
+            [shhh.util :refer [cycle-n toggle!]]))
 
 
-(swap! verbose not)
+(sh/restart!)
+(toggle! verbose)
+(toggle! sh/debug-osc)
 
 (do
-  (start!)
-  (play! (cycle :bd :sd)))
-
-(play!)
-
-(p/process-pattern (times 8 :sd))
-
-(continue!)
-(start!)
-
-(shhh!)
-
-(pause!)
-
-(do
-  (reset! cps 1)
-  (set-pattern! [:bd (splice :sd :sd :sd)])
   (start!))
 
+(start!)
+(restart!)
+(sh/clear-pattern!)
+(reset! loops (l/pattern->loops (apply ? 0.9 (repeat 16 :hh))))
+(pause!)
+(sh/continue!)
 
-(play! [(cycle :bd :bd :cr) (splice :sd :sd :sd)])
+(sh/clear-pattern!)
+(reset! cps 1)
+
+(swap! sh/debug-osc not)
+(o 0 (times 16 :bd))
 
 (pause!)
 
-(reset! verbose false)
-(swap! sh/debug-osc not)
 
-(sh/pos->s 1/4)
-(continue!)
+(l/slice
+ (first @sh/loops)
+ 0
+ 2)
 
-(play! (for [n (cycle-n 4 [:c :a :f :e])]
-         {:s "supermandolin" :n (note n) :delta 2.0}))
-
-(sh!)
+(-> @loops
+    first
+    second
+    last
+    identity
+    sh/create-event
+    )

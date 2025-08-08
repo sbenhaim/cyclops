@@ -50,33 +50,3 @@
   (expect (s->pos 3 2) 3/2)
   (expect (s->pos 4 2) 0)
   (expect (s->pos 5 2) 1/2))
-
-(defexpect test-slice
-  (expect (slice [1 [{:position 0 :s "a"} {:position 1/2 :s "b"}]] 0 1/2)
-          [{:position 0 :s "a"}])
-  (expect (slice [1 [{:position 0 :s "a"} {:position 1/2 :s "b"}]] 1/2 1)
-          [{:position 0 :s "b"}])
-  (expect (slice [1 [{:position 0 :s "a"} {:position 1/2 :s "b"}]] 1/2 3/2)
-          [{:position 0 :s "b"} {:position 1/2 :s "a"}])
-  (expect (slice [1 [{:position 0 :s "a"} {:position 1/2 :s "b"}]] 1/2 1/2)
-          [{:position 0 :s "b"} {:position 1/2 :s "a"}])
-
-  (expect (slice [2 [{:position 0 :s "a"} {:position 1/2 :s "b"}
-                     {:position 1 :s "c"} {:position 3/2 :s "d"}]]
-                 0 1)
-          [{:position 0 :s "a"} {:position 1/2 :s "b"}])
-  (expect (slice [2 [{:position 0 :s "a"} {:position 1/2 :s "b"}
-                     {:position 1 :s "c"} {:position 3/2 :s "d"}]]
-                 1/2 3/2)
-          [{:position 0 :s "b"} {:position 1/2 :s "c"}])
-  (expect (slice [2 [{:position 0 :s "a"} {:position 1/2 :s "b"}
-                     {:position 1 :s "c"} {:position 3/2 :s "d"}]]
-                 1 5/2)
-          [{:position 0 :s "c"} {:position 1/2 :s "d"} {:position 1 :s "a"}])
-  (expect (slice [2 [{:position 0 :s "a"} {:position 1/2 :s "b"}
-                     {:position 1 :s "c"} {:position 3/2 :s "d"}]]
-                 3/4 1/2)
-          [{:position 1/4 :s "c"} {:position 3/4 :s "d"} {:position 5/4 :s "a"}])
-  (expect (slice [1 [{:position 0 :s "a"} {:position 1/2 :s "b"}]]
-                 1/2 3)
-          [{:position 0 :s "b"} {:position 1/2 :s "a"} {:position 1 :s "b"} {:position 3/2 :s "a"} {:position 2 :s "b"}]))

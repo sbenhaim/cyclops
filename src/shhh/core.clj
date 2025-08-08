@@ -1,17 +1,16 @@
 (ns shhh.core
   "((((Tidal wave of parens))))"
   (:require
-   [clojure.math.numeric-tower :refer [lcm]]
    [overtone.osc :as osc]
    [overtone.at-at :as at]
-   [shhh.pattern :as pat]))
-
+   [shhh.pattern :as pat]
+   [shhh.looping :as l]))
 
 ;; Constants
 
 (def default-port 57120)
 (def default-host "localhost")
-(def default-cps 5625/10000)
+(def default-cps 1)
 (def default-latency-s 0.1)
 (def freq-s 1/10)
 
@@ -20,12 +19,12 @@
 (def cps (atom default-cps))
 (def cur-cycle (atom 0))
 (def start-time (atom nil))
-(def verbose (atom true))
+(def verbose (atom false))
 (def debug-osc (atom false))
-(def stop (atom false))
 (def shhh (atom false))
 
 (def pool (at/mk-pool))
+(def job (atom nil))
 
 (def loops (atom {1 []}))
 
@@ -39,22 +38,24 @@
    :delta 0.5
    :room 0.0
    :size 0.0
+   :legato 1.0
    :orbit (int 0)
    :n (int 0)
    :latency default-latency-s})
 
 (declare pos->s)
 
-
 (defn create-event
-  [{:keys [position length] :or {position 0.0 length 1/2} :as event-map}]
-  (-> default-event
-      (merge event-map)
-      (update :latency #(-> % (+ position) float)) ;; Remember the joy of live coding
-      (update :s name)
-      (update :n float)
-      (update :delta #(or % (pos->s length)))
-      (select-keys (keys default-event))))
+  [{:keys [start length legato] :or {start 0.0
+                                     length 1/2
+                                     legato 1} :as event-map}]
+  (let [event (-> event-map
+                  (update :delta #(or % (pos->s (* length legato))))
+                  (update :s #(if (fn? %) (name (%)) (name %))))]
+    (-> default-event
+        (merge event)
+        (update :latency #(+ % start))
+        (select-keys (keys default-event)))))
 
 
 (def osc-client (atom nil))
@@ -65,16 +66,17 @@
   (try
     (apply osc/osc-send @osc-client
            "/dirt/play"
-           (mapcat (fn [[k v]] [(name k) v]) event-map))
+           (mapcat (fn [[k v]] [(name k) (if (number? v) (float v) v)]) event-map))
     (catch Exception e
       (println (str "OSC ERROR: " (.getMessage e))))))
 
 
 (defn send-dirt
   [event-map]
-  (send-event (create-event event-map)))
+  (when (:s event-map)
+    (send-event (create-event event-map))))
 
-(comment (send-event {:s "bd" :position 0 :period 1}))
+(comment (send-event {:s nil :start 0 :period 1}))
 
 (defn throw-dirt [evts]
   (doseq [e evts] (send-dirt e)))
@@ -101,61 +103,12 @@
 
 
 (defn s->pos
-  "Modulated loop position based on number of seconds passed. Always will be < loop-order."
-  [s loop-order]
+  "Modulated loop position based on number of seconds passed. Always will be < loop-period."
+  [s period]
   (let [n-cycles (s->cycles s) ;; how many cycles passed
-        modo (mod n-cycles loop-order)] ;; modulate to wrap around the loop
+        modo (mod n-cycles period)] ;; modulate to wrap around the loop
     modo))
 
-
-
-(defn cycle-loop
-  "Like clojure.core/cycle but, moves events cyclically forward in time as it cycles"
-  ([loop-order evts] (cycle-loop nil loop-order evts))
-  ([n loop-order evts]
-   (let [loop (->> evts
-                   repeat
-                   (mapcat
-                    (fn [i cycle]
-                      (for [e cycle]
-                        (update e :position #(+ % (* i loop-order)))))
-                    (iterate inc 0)))]
-     (if n
-       (take (* n (count evts)) loop)
-       loop))))
-
-
-(comment (->> [{:position 0} {:position 3/2} {:position 4}] (cycle-loop 3) (take 20)))
-
-
-(defn cycle-loops
-  "Turn a hashmap of {loop-order loop} into a hashmap of infinite lazy cycling loops.
-
-NOTE: Not currently used in favor of JIT cycling in `slice`. May improve performance."
-  [loops]
-  (into {}
-        (for [[loop-order evts] loops]
-          [loop-order (cycle-loop loop-order evts)])))
-
-
-(defn slice
-  "Given values `from` and `to` representing cycle-relative positions (i.e, produced by `s->pos`
-  returns a slice of a loop falling within the two points in time.
-
-  If `to` is > `loop-order`, the loop is (lazily) cycled to the length needed.
-
-  Cycle-relative times are offset by `from` to produce position-relative times for scheduling."
-  [[order loop] from to]
-  ;; (assert (> to from))
-  (let [to (if (<= to from) (+ to order) to)
-        loop (if (> to order) (cycle-loop order loop) loop)]
-    (into []
-          (comp
-           (drop-while #(> from (:position %)))
-           (take-while #(> to (:position %)))
-           (map (fn [e] (update e :position #(- % from))))
-           )
-          loop)))
 
 
 (defn tick!
@@ -163,69 +116,31 @@ NOTE: Not currently used in favor of JIT cycling in `slice`. May improve perform
 
   - Schedules itself for `now` plus `freq-s` (`next-tick`)
   - Calculates time since start of looping
-  - Calculates events that should be scheduled between `now` and `next-tick` for each loop order (`slice`)
+  - Calculates events that should be scheduled between `now` and `next-tick` for each loop period (`slice`)
   - Sends the OSC messages for slices.
 
-  NOTE: Position is currently calculated per order, which seems redundant, but
-  cycling the loops and maintaining and single order is probably worse for
+  NOTE: Start is currently calculated per period, which seems redundant, but
+  cycling the loops and maintaining and single period is probably worse for
   performance.
 "
   [now]
   (let [next-tick (+ now (* freq-s 1000))
         delta-s (/ (- now @start-time) 1000)]
 
-    (when-not @stop
-      (at/at next-tick #(tick! next-tick) pool))
+    (reset! job (at/at next-tick #(tick! next-tick) pool))
 
     (run!
-     (fn [[order loop]]
-       (do
-         (let [pos-from  (s->pos delta-s order)
-               slice-len (s->pos freq-s order)
-               ;; pos-to    (s->pos (/ next-tick 1000) order)
-               pos-to    (+ pos-from slice-len)
-               slc       (slice [order loop] pos-from pos-to)]
-           ;; Todo: Convert note position to scheduling latency
-           (when (seq slc)
-             (when @verbose
-               (println
-                {:now       now
-                 :delta-s   [delta-s (float delta-s)]
-                 :freq-s    [freq-s (float freq-s)]
-                 :from      [pos-from (float pos-from)]
-                 :to        [pos-to (float pos-to)]
-                 :slice-len [slice-len (float slice-len)]
-                 :next-tick [next-tick (float next-tick)]
-                 :slice     slc
-                 }))
-             (when-not @shhh
-               (throw-dirt slc))))))
+     (fn [[period loop]]
+       (let [pos-from  (s->pos delta-s period)
+             slice-len (s->cycles freq-s)
+             pos-to    (+ pos-from slice-len)
+             slc       (l/slice [period loop] pos-from pos-to :mode :begin :offset? true)]
+         (when (seq slc)
+           (when @verbose
+             (println pos-from pos-to slice-len (mapv #(select-keys % [:start :s :n]) slc)))
+           (when-not @shhh
+             (throw-dirt slc)))))
      @loops)))
-
-
-;; Loop Maths
-
-
-(defn interleave-loops
-  "Combines loops of different order into a single loop of `lcm` order"
-  [[order-a loop-a] [order-b loop-b]]
-  (let [lcm (lcm order-a order-b)
-        ab  (concat (cycle-loop (/ lcm order-a) loop-a)
-                    (cycle-loop (/ lcm order-b) loop-b))
-        pat (sort-by :position ab)]
-    pat))
-
-
-
-(defn untangle-loops
-  "After assigning event times to a pattern, converts nested loops of various order
-  into a hashmap of {loop-order loop}."
-  [tangled]
-  (->> tangled
-       flatten
-       (sort-by :position)
-       (group-by :period)))
-
 
 ;; Controls
 
@@ -240,15 +155,14 @@ NOTE: Not currently used in favor of JIT cycling in `slice`. May improve perform
 (defn pause!
   "Stops `tick!`, but does not reset the clock."
   []
-  (reset! stop true)
+  (at/kill @job)
   (println "---PAUSED---"))
 
 
 (defn continue!
   "unpauses"
   []
-  (when @stop
-    (reset! stop false)
+  (when (nil? (at/scheduled-jobs pool))
     (tick! (at/now))))
 
 
@@ -267,7 +181,7 @@ NOTE: Not currently used in favor of JIT cycling in `slice`. May improve perform
   [pat]
   (reset! loops (-> pat
                     pat/process-pattern
-                    untangle-loops)))
+                    l/untangle-loops)))
 
 
 (defn clear-pattern!
@@ -286,9 +200,9 @@ NOTE: Not currently used in favor of JIT cycling in `slice`. May improve perform
 "
 
   []
+  (pause!)
   (init-client!)
   (speak!)
-  (reset! stop false)
   (reset! start-time (at/now))
   (tick! @start-time))
 
@@ -299,32 +213,15 @@ NOTE: Not currently used in favor of JIT cycling in `slice`. May improve perform
   (start!))
 
 
-(defn play! [pat]
-  (set-pattern! pat)
+(defn play! [some-loops]
+  (reset! loops some-loops)
   (speak!)
   (continue!))
 
 
 
-
-
-
-(comment
-  (start!)
-
-  (reset! verbose false)
-  (clear-pattern!)
-  (reset! debug-osc false)
-  (reset! verbose false)
-  (play!
-   (into [:fast] (for [n [:c :a :f :e]]
-                   {:s "superpiano" :n (note n 5) :delta 2.0 :size 0.7 :room 0.7})))
-  (shhh!)
-  (speak!)
-  (clear-pattern!)
-
-
-  (send-dirt {:s "midi" :n (note :d#5) :delta 2.0})
-
-
-  )
+(defn o [n & pats]
+  (let [pats (concat pats [[{:orbit (float n)}]])
+        loops (mapcat l/pattern->loops pats)
+        merged (apply l/|+ loops)]
+    (play! [merged])))

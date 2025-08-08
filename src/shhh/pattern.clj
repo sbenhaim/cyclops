@@ -1,5 +1,6 @@
 (ns shhh.pattern
-  (:require [shhh.util :refer [cycle-n]]))
+  (:require
+   [shhh.util :refer [cycle-n]]))
 
 (defn shorthand?
   "Identifies events represented with shorthand notation."
@@ -15,14 +16,15 @@
   (cond
     (sequential? sh) (apply fit sh)
     (number? sh) {:n (float sh)}
+    ({:- "~"} sh) {:s nil}
     (keyword? sh) {:s (name sh)}
     (string? sh) {:s sh}
-    (fn? sh) {:fn sh}
+    (fn? sh) {:s sh}
     :else sh))
 
 
 (defn ->events
-  "See `shhh.patter/->event`"
+  "See `shhh.pattern/->event`"
   [shs]
   (map ->event shs))
 
@@ -95,7 +97,7 @@
   {:op :splice
    :prob x
    :children
-   (->events (map (fn [e] (fn [& _] (if (< (rand) x) e "~"))) children))})
+   (->events (map (fn [e] (fn [& _] (when (< (rand) x) e))) children))})
 
 
 (defn euclid [args & children]
@@ -111,18 +113,18 @@
    :children (->events children)})
 
 
-(defn rnd
+(defn pick
   "Each loop, randomly chooses one of its children."
   [& children]
-  {:op :rand-nth
+  {:op :splice
    :children (->events [#(rand-nth children)])})
 
 
 (defrecord Context
-    [period            ;; Number of cycles before looping
-     segment-length    ;; How much segments does it occupy per cycle
-     spacing           ;; How many segments between events
-     position          ;; Where it sits in the pattern
+    [period         ;; Number of cycles before looping
+     segment-length ;; How much segments does it occupy per cycle
+     spacing        ;; How many segments between events
+     start          ;; Where it sits in the pattern
      ])
 
 
@@ -157,24 +159,26 @@
 (defn apply-timing
   "Given a collection of events and a timing `Context`, recursively schedules
   the events honoring weights."
-  [events ^Context {:keys [period spacing segment-length position] :as context}]
-  (let [n-segments (weigh-children events)]
-    (loop [raw events pos position timed []]
-      (if-not
-          (seq raw) timed
-          (let [[evt & raw] raw
-                evt-weight (weigh evt) ;; How many segments to occupy
-                evt-length (* evt-weight segment-length)
-                op-ctx (assoc context
-                              :position pos
-                              :segment-length evt-length) ;; Context for children operations
-                next-pos (+ pos (* evt-weight spacing))]
-            (recur raw next-pos
-                   (conj timed
-                         (if (op? evt)
-                           (apply-op evt op-ctx) ;; If child is an op, apply with inherited context
-                           ;; Otherwise, add timing information to the event. Event keys can override (e.g., `length`).
-                           (merge {:position pos :period period :length evt-length} evt)))))))))
+  [events ^Context {:keys [period spacing segment-length start] :as context}]
+  (loop [raw events start start timed []]
+    (if-not
+        (seq raw) timed
+        (let [[evt & raw] raw
+              evt-weight  (weigh evt) ;; How many segments to occupy
+              evt-length  (* evt-weight segment-length)
+              op-ctx      (assoc context
+                            :start start
+                            :segment-length evt-length) ;; Context for children operations
+              next-start    (+ start (* evt-weight spacing))]
+          (recur raw next-start
+                 (conj timed
+                       (if (op? evt)
+                         (apply-op evt op-ctx) ;; If child is an op, apply with inherited context
+                         ;; Otherwise, add timing information to the event. Event keys can override (e.g., `length`).
+                         (merge {:start start
+                                 :period period
+                                 :length evt-length
+                                 :end (+ start evt-length)} evt))))))))
 
 
 (defn fit-children
@@ -267,3 +271,24 @@
 (defmethod apply-op :eucid
   [args & children]
   "todo")
+
+;; Effects
+
+(defn n [& children])
+
+(defn s [& children])
+
+(defn note [& children])
+
+(defn chord [& children])
+
+(defn pan [& children])
+
+(defn vowel [& children])
+
+(defn dry [& children])
+(defn room [& children])
+(defn size [& children])
+
+
+;; Osc
