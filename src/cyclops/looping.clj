@@ -1,7 +1,7 @@
-(ns shhh.looping
+(ns cyclops.looping
   (:require
    [clojure.math.numeric-tower :refer [lcm]]
-   [shhh.pattern :refer [process-pattern]]))
+   [cyclops.pattern :refer [process-pattern]]))
 
 
 ;; Loop Maths
@@ -24,12 +24,31 @@
        loop))))
 
 
+(defn evt-sort
+  [a b]
+  (let [c (compare (:start a) (:start b))]
+    (if (not= c 0)
+      c
+      (compare (:end a) (:end b)))))
+
+
 (defn lcm-loops
-  "Combines loops of different period into a single loop of `lcm` period"
+  "Combines loops of different period into a single loop of `lcm` period
+  TODO: Should period values of events change?"
   [[period-a loop-a] [period-b loop-b]]
   (let [c-period (lcm period-a period-b)]
     [[c-period (cycle-loop (/ c-period period-a) [period-a loop-a])]
      [c-period (cycle-loop (/ c-period period-b) [period-b loop-b])]]))
+
+
+(defn sync-periods
+  [ragged]
+  (let [loops (->> ragged
+                   (group-by :period)
+                   (reduce lcm-loops))
+        period (ffirst loops)
+        events (apply concat (map second loops))]
+    [period (sort evt-sort events)]))
 
 
 (defn slice
@@ -38,12 +57,12 @@
 
   If `to` is > `loop-period`, the loop is (lazily) cycled to the length needed.
 
-  Cycle-relative times are offset by `from` to produce start-relative times for scheduling."
+  When `offset?` is true, cycle-relative times are offset by `from` to produce start-relative times for scheduling."
   [[period loop] from to & {:keys [offset? mode]
                             :or   {offset? false
                                    mode    :begin}}]
   (let [to   (if (<= to from) (+ to period) to)
-        loop (if (> to period) (cycle-loop  [period loop]) loop)
+        loop (if (> to period) (cycle-loop [period loop]) loop)
         [key1 key2 compr] (case mode
                             :begin  [:start :start >]
                             :end    [:end :end >]
@@ -77,7 +96,6 @@
 
 
 (defn merge-loops
-  "TODO: More generaly with"
   [with-fn a b & {:keys [structure-from]
                   :or   {structure-from :left}}]
   (let [[a [period b]] (lcm-loops a b)
@@ -120,20 +138,18 @@
   (apply <merge> + loops))
 
 
-(defn untangle-loops
+(defn periodic-loops
   "After assigning event times to a pattern, converts nested loops of various period
   into a hashmap of {loop-period loop}."
-  [tangled]
-  (->> tangled
-       flatten
-       (sort-by :start)
+  [flat]
+  (->> flat
        (group-by :period)
        (into [])))
 
 
 (defn pattern->loops
   [pattern]
-  (-> pattern process-pattern untangle-loops))
+  (-> pattern process-pattern periodic-loops))
 
 (comment
   (let [[a] (pattern->loops [:saw :tri :square])

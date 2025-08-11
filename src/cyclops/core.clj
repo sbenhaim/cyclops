@@ -1,10 +1,10 @@
-(ns shhh.core
+(ns cyclops.core
   "((((Tidal wave of parens))))"
   (:require
    [overtone.osc :as osc]
    [overtone.at-at :as at]
-   [shhh.pattern :as pat]
-   [shhh.looping :as l]))
+   [cyclops.pattern :as pat]
+   [cyclops.looping :as l]))
 
 ;; Constants
 
@@ -21,7 +21,7 @@
 (def start-time (atom nil))
 (def verbose (atom false))
 (def debug-osc (atom false))
-(def shhh (atom false))
+(def sh (atom false))
 
 (def pool (at/mk-pool))
 (def job (atom nil))
@@ -138,7 +138,7 @@
          (when (seq slc)
            (when @verbose
              (println pos-from pos-to slice-len (mapv #(select-keys % [:start :s :n]) slc)))
-           (when-not @shhh
+           (when-not @sh
              (throw-dirt slc)))))
      @loops)))
 
@@ -169,13 +169,13 @@
 (defn sh!
   "Stops sending events, but continues processing them."
   []
-  (reset! shhh true))
+  (reset! sh true))
 
 
 (defn speak!
-  "Un-shhhes"
+  "Un-shes"
   []
-  (reset! shhh false))
+  (reset! sh false))
 
 (defn set-pattern!
   [pat]
@@ -221,7 +221,15 @@
 
 
 (defn o [n & pats]
-  (let [pats (concat pats [[{:orbit (float n)}]])
-        loops (mapcat l/pattern->loops pats)
-        merged (apply l/|+ loops)]
-    (play! [merged])))
+  (let [loops (l/|+| pats)
+        ;; loop (pat/effect-fn pat :orbit (constantly n))
+        ]
+    loops
+    #_(swap! loops assoc n )))
+
+
+(o 1 (pat/n :c :a :f :e) (pat/s :supersaw))
+
+
+(l/|+
+ (pat/n :a :b :c))

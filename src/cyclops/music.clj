@@ -1,4 +1,4 @@
-(ns shhh.music
+(ns cyclops.music
   (:require [overtone.music.pitch :as m]))
 
 
@@ -58,7 +58,7 @@
       :else cyc)))
 
 
-(comment (take 20 (cycle-chord :cm)))
+(comment (cycle-chord :cm7 :o 2))
 
 
 (defn scale

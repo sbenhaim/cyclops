@@ -1,4 +1,4 @@
-(ns shhh.util)
+(ns cyclops.util)
 
 (defn cycle-n
   [n seq]
@@ -9,3 +9,7 @@
 
 (defn toggle! [a]
   (swap! a not))
+
+
+(defn rot [s n]
+  (take (count s) (drop n (cycle s))))

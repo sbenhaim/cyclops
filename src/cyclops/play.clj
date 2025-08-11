@@ -1,15 +1,15 @@
-(ns shhh.play
-  (:require [shhh.core :refer [start! restart! play! pause! continue! sh! speak! set-pattern! verbose cps freq-s o loops] :as sh]
-            [shhh.music
+(ns cyclops.play
+  (:require [cyclops.core :refer [start! restart! play! pause! continue! sh! speak! set-pattern! verbose cps freq-s o loops] :as sh]
+            [cyclops.music
              :refer [cycle-chord note cycle-scale]
              :rename {cycle-chord cc note n cycle-scale cs}
              :as m]
-            [shhh.looping :as l]
-            [shhh.pattern
+            [cyclops.looping :as l]
+            [cyclops.pattern
              :refer [fit times cycle slow splice rep elongate prob euclid stack pick]
              :rename {fit f times x cycle cyc slow slw splice spl elongate el prob ? euclid euc stack s}
              :as p]
-            [shhh.util :refer [cycle-n toggle!]]))
+            [cyclops.util :refer [cycle-n toggle!]]))
 
 
 (sh/restart!)

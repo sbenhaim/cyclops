@@ -1,6 +1,6 @@
 (ns test.core-test
-  (:require [shhh.core :refer :all]
-            [shhh.pattern :refer [rep times cycle]]
+  (:require [cyclops.core :refer :all]
+            [cyclops.pattern :refer [rep times cycle]]
             [expectations.clojure.test :refer [defexpect expect]]))
 
 

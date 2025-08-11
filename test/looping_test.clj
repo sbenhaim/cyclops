@@ -1,7 +1,7 @@
 (ns looping-test
   (:require
-   [shhh.looping :refer :all]
-   [shhh.pattern :refer [process-pattern] :as p]
+   [cyclops.looping :refer :all]
+   [cyclops.pattern :refer [process-pattern] :as p]
    [expectations.clojure.test :refer [defexpect expect]]))
 
 
