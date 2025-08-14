@@ -1,7 +1,7 @@
 (ns cyclops.pattern
   (:require
-   [cyclops.util :refer [cycle-n rot]]
-   [cyclops.music :as m]))
+   [clojure.math.numeric-tower :refer [lcm]]
+   [clojure.pprint :refer [pprint]]))
 
 
 (defn ->event
@@ -45,9 +45,67 @@
 (def base-context (->Context 1 1 1 0))
 
 
+(defn cycle-events
+  "Like clojure.core/cycle but, moves events cyclically forward in time as it cycles"
+  ([[loop-period evts]] (cycle-events nil [loop-period evts]))
+  ([n [loop-period evts]]
+   (let [loop (->> evts
+                   repeat
+                   (mapcat
+                    (fn [i cycle]
+                      (for [e cycle]
+                        (-> e
+                            (update :start #(+ % (* i loop-period)))
+                            (update :end #(+ % (* i loop-period))))))
+                    (range)))]
+     (if n
+       (take (* n (count evts)) loop)
+       loop))))
+
+
+(defn event-sort
+  [a b]
+  (let [c (compare (:start a) (:start b))]
+    (if (not= c 0)
+      c
+      (compare (:end a) (:end b)))))
+
+
+(defn lcp
+  [a b]
+  (lcm (period a) (period b)))
+
+
+(defn sync-loops
+  "Combines loops of different period into a single loop of `lcm` period"
+  [a b]
+  (let [pa (period a)
+        pb (period b)
+        pc (lcm a b)]
+    [(slice a 0 pc false {})
+     (slice b 0 pc false {})]))
+
+
+(defn merge-ops
+  "Combines loops of different period into a single loop of `lcm` period without merging events."
+  [[pa a] [pb b]]
+  (let [period (lcm pa pb)
+        a (cycle-events (/ period pa) [pa a])
+        b (cycle-events (/ period pb) [pb b])]
+    [period (->> a
+                 (concat b)
+                 (sort event-sort))]))
+
+
 (defn process-pattern
   [pat-root]
-  (-> pat-root (apply-op base-context) flatten))
+  (->> (apply-op pat-root base-context)
+       flatten
+       (group-by :period)
+       (reduce merge-ops)
+       (apply ->EventLoop)))
+
+
 
 
 (defn display-pat
@@ -77,6 +135,7 @@
                                  :segment-length evt-length) ;; Context for children operations
               next-start  (+ start (* evt-weight spacing))]
           (recur raw next-start
+
                  (conj timed
                        (if (op? evt)
                          (apply-op evt op-ctx) ;; If child is an op, apply with inherited context
@@ -88,208 +147,203 @@
                                    :end    (+ start evt-length)} evt)))))))))
 
 
-(defn fit-children
-  "Squeeze children into inherited segment. Spacing and segment length will be the same. Period remains unchanged."
-  [children {:keys [segment-length] :as context}]
-  (let [n              (weigh-children children)
-        spacing        (/ segment-length n)
-        segment-length spacing]
-    (apply-timing children (assoc context
-                                  :spacing spacing
-                                  :segment-length segment-length))))
 
+(defprotocol Loop
+  (period [this])
+  (slice [this from to offset? opts]))
+
+
+(defprotocol Evented
+  (events [this]))
+
+
+(defrecord SinLoop [min max p]
+  Loop
+  (period [_] p)
+  (mult [this x] x)
+  (slice [_ from to offset? {}]
+    (let [TAU (* 2 Math/PI)
+          len (- to from)
+          from (if offset? 0 from)
+          to (if offset? to (- to from))
+          mult (-> max (- min) (/ 2))
+          base (-> from (* TAU) (/ p) Math/sin (+ 1) (* mult))
+          n (+ base min)]
+      [{:start from :length len :end to :n n}])))
+
+
+(defrecord RandLoop [min max]
+  Loop
+  (period [_] 1)
+  (slice [_ from to offset? {}]
+    (let [len (- to from)
+          from (if offset? 0 from)
+          to (if offset? to (- to from))
+          cap (- max min)
+          n #(- (rand cap) min)]
+      [{:start from :length len :end to :n n}])))
+
+
+(let [rl (->RandLoop 0 10)]
+  ((->
+    (slice rl 0 1/4 false {})
+    (nth 0)
+    :n)))
+
+
+(comment
+  (let [sin (->SinLoop 0 100 2)]
+    (for [i (range 0 9/4 1/8)]
+      (slice sin i 2 false {}))))
+
+
+(defrecord EventLoop [p events]
+  Evented
+  (events [_] events)
+  Sliceable
+  (period [_] p)
+  (mult [this x] (-> this
+                     (update :period #(* x))
+                     (update :events #(cycle-events this)))) ; todo
+  (slice [_ from to offset? {:keys [mode] :or {mode :begin}}]
+    (let [to                (if (<= to from) (+ to p) to)
+          loop              (if (> to p) (cycle-loop [p events]) events)
+          [key1 key2 compr] (case mode
+                              :begin  [:start :start >]
+                              :end    [:end :end >]
+                              :active [:end :start >=])
+          slc               (into []
+                                  (comp
+                                   (drop-while #(compr from (key1 %)))
+                                   (take-while #(> to (key2 %))))
+                                  loop)]
+      (if offset?
+        (->> slc
+             (mapv (fn [e] (update e :start #(- % from))))
+             (mapv (fn [e] (update e :end #(- % from)))))
+
+        slc))))
 
 
 ;; Pattern API: Functions used in pattern definition
 
-;; Any sequence treated like Tidal's `fastcat`, squeezing notes into the containing context.
-(extend-protocol Op
-  clojure.lang.Sequential
-  (weight [_] 1)
-  (apply-op [this context] (fit-children this context))
-  (display [this] this))
+#_(defn slice
+  "Given values `from` and `to` representing cycle-relative starts (i.e, produced by `s->pos`
+  returns a slice of a loop falling within the two points in time.
+
+  If `to` is > `loop-period`, the loop is (lazily) cycled to the length needed.
+
+  When `offset?` is true, cycle-relative times are offset by `from` to produce start-relative times for scheduling."
+  [[period loop] from to & {:keys [offset? mode]
+                            :or   {offset? false
+                                   mode    :begin}}]
+  (let [to                (if (<= to from) (+ to period) to)
+        loop              (if (> to period) (cycle-loop [period loop]) loop)
+        [key1 key2 compr] (case mode
+                            :begin  [:start :start >]
+                            :end    [:end :end >]
+                            :active [:end :start >=])
+        slc               (into []
+                                (comp
+                                 (drop-while #(compr from (key1 %)))
+                                 (take-while #(> to (key2 %))))
+                                loop)]
+    (if offset?
+      (->> slc
+           (mapv (fn [e] (update e :start #(- % from))))
+           (mapv (fn [e] (update e :end #(- % from)))))
+
+      slc)))
+
+(defn merge-with-fn
+  [a b]
+  (cond
+    (and (number? a) (number? b)) (+ a b)
+    :else [a b]))
 
 
-(comment (process-pattern [:a :b :c]))
+(defn merge-left
+  [afn a b]
+  ;; (println a b)
+  (-> (merge b a)
+      (assoc :n (afn (get a :n 0) (get b :n 0)))))
 
 
-(defn apply-splice
-  [children {:keys [segment-length] :as context}]
-  (let [n              (weigh-children children)
-        segment-length (/ segment-length n)]
-    (apply-timing children (assoc context
-                                  :spacing segment-length
-                                  :segment-length segment-length))))
+(defn merge-both
+  [afn a b]
+  (let [a (-> a
+              (assoc :start (max (:start a) (:start b)))
+              (assoc :end (min (:end a) (:end b))))]
+    (merge-left afn a b)))
 
 
-(defmacro defop
-  {:clj-kondo/lint-as :clojure.core/defn :clj-kondo/ignore true}
-  [op docs args & methods]
-  (let [apply-op (first (filter #(= 'apply-op (first %)) methods))
-        weight (first (filter #(= 'weight (first %)) methods))
-        weight (or weight '(weight [_] 1))
-        display (first (filter #(= 'display (first %)) methods))
-        display (or display '(display [this] (display-pat this)))]
-    (assert apply-op "`apply-op` must be defined for op.")
-    `(defn ~op ~docs [~@args]
-       (reify Op
-         ~weight
-         ~apply-op
-         ~display))))
+(defn merge-loops
+  [with-fn a ^EventLoop b ^Loop & {:keys [structure-from]
+                                   :or   {structure-from :left}}]
+  (let [[a [period b]] (sync-loops a b)
+        slice-mode     (case structure-from :left :begin :both :active)
+        merged
+        (reduce
+         (fn [result e]
+           (let [from    (:start e)
+                 to      (+ from (:length e))
+                 overlap (slice b from to false {:mode slice-mode})]
+             (concat result (mapv #(with-fn % e) overlap))))
+         []
+         (.events a))]
+    [period merged]))
 
 
-(defop spl
-  "Splices events into parent context adjusting segmentation."
-  [& children]
-  (weight [_] (weigh-children children))
-  (apply-op [_ ctx] (apply-splice children ctx)))
+(defn merge-loops
+  [with-fn a ^EventLoop b ^Loop & {:keys [structure-from]
+                                   :or   {structure-from :left}}]
+  (let [new-period (lcm (period a) (period b))
+        slice-mode (case structure-from :left :begin :both :active)
+        merged
+        (reduce
+         (fn [result e]
+           (let [from    (:start e)
+                 to      (+ from (:length e))
+                 overlap (slice b from to false {:mode :active})]
+             (concat result (mapv #(with-fn e %) overlap))))
+         []
+         (.events a))]
+    (->EventLoop new-period merged)))
 
 
-(defn times
-  "Squeezes all of its events into the enclosing segment."
-  [n & children]
-  (cycle-n n children))
-
-
-(defn rep [x & children]
-  (apply spl (cycle-n x children)))
-
-
-(defn prob
-  "Plays event with probability `x` (0 to 1). Plays rest otherwise.
-  If applied to group, prob is applied to *each* event, not to entire group."
-  [x & children]
-  (apply spl (map (fn [e] (fn [& _] (when (< (rand) x) e))) children)))
+(defmethod print-method EventLoop [v ^java.io.Writer writer]
+  (.write writer (with-out-str (print-table (.events v)))))
 
 
 
-(defn bjork
-  ([ps os] (bjork ps os []))
-  ([ps os res]
-   (if (or (not (seq ps)) (not (seq os)))
-     (let [step    (concat res ps os)
-           [ps os] (split-with #(= (first step) %) step)]
-       (if (<= (count os) 1)
-         (flatten (concat ps os))
-         (recur ps os [])))
-     (recur (rest ps) (rest os)
-            (conj res (concat (first ps) (first os)))))))
+
+(defn merge-> [merge-fn & loops]
+  (let [afn (partial merge-left merge-fn)]
+    (reduce (partial merge-loops afn) loops)))
 
 
-(defn euclid
-  [[k n & [r]] evt]
-  (assert (>= n k) "Second arg must be greater than first.")
-  (let [mask (bjork (repeat k [true]) (repeat (- n k) [nil]))
-        mask (rot mask (or r 0))]
-    (map #(and % evt) mask)))
-
-(euclid [5 8] :bd)
-
-(defn pick
-  "Each loop, randomly chooses one of its children."
-  [& children]
-  (apply spl [#(rand-nth children)]))
 
 
-(defn apply-slow
-  "Stretch the children across `factor` segments by altering `period` and stretching `spacing` and `segment-length`."
-  [factor children {:keys [period segment-length] :as context}]
-  (let [n              (weigh-children children)
-        cycle-period   (* factor period)
-        spacing        (/ cycle-period n)
-        segment-length (/ (* segment-length factor) n)]
-    (apply-timing children (assoc context
-                                  :period cycle-period
-                                  :spacing spacing
-                                  :segment-length segment-length))))
+(defn <-merge [merge-fn & loops]
+  (let [afn (partial merge-left merge-fn)]
+    (reduce #(merge-loops afn %2 %1) loops)))
+
+(defn <merge> [merge-fn & loops]
+  (let [afn (partial merge-both merge-fn)]
+    (reduce #(merge-loops afn %1 %2 :structure-from :both) loops)))
 
 
-(defop slow
-  "Stretches children across n cycles."
-  [n & children]
-  (apply-op [_ ctx] (apply-slow n children ctx)))
+(defn |+ [& loops]
+  (apply merge-> + loops))
 
 
-(defn cyc
-  "Plays one child per cycle."
-  [& children]
-  (apply slow (weigh-children children) children))
+(defn +| [& loops]
+  (apply <-merge + loops))
 
 
-(defop elongate
-  "Stretches note across `n` segments."
-  [n & children]
-  (weight [_] (* n (weigh-children children)))
-  (apply-op [_ {:keys [segment-length] :as context}]
-            (let [n              (weigh-children children)
-                  segment-length (/ segment-length n)
-                  spacing        segment-length]
-              (apply-timing children (assoc context :segment-length segment-length :spacing spacing)))))
-
-
-(defop stack
-  "Plays contained loops simultaneously."
-  [& children]
-  (apply-op [_ ctx] (mapcat #(apply-op % ctx) children)))
+(defn |+| [& loops]
+  (apply <merge> + loops))
 
 
 ;; Effects
-
-
-(defn effect-fn
-  [pat target value-tx]
-  (->> pat
-       process-pattern
-       (map #(assoc % target (value-tx (:value %))))))
-
-
-(defn rest? [v]
-  (or (nil? v) (#{:- "~"} v)))
-
-
-(defn parse-n
-  [n]
-  (cond
-    (rest? n) nil
-    (keyword? n) (m/note n)
-    (string? n) (m/note n)
-    (number? n) (float n)
-    :else n))
-
-
-(defn n [& pat]
-  (effect-fn pat :n parse-n))
-
-
-(comment (n :a [:b :c]))
-
-
-(defn parse-s
-  [s]
-  (cond
-    (rest? s) nil
-    (keyword? s) (name s)
-    :else s))
-
-
-(defn s [& pat]
-  (effect-fn pat :s parse-s))
-
-
-(comment (s :bd :- :bd :sd))
-
-(defn pan [& pat]
-  (effect-fn pat :pan float))
-
-(defn vowel [& pat]
-  (effect-fn pat :vowel name))
-
-(defn room [& pat]
-  (effect-fn pat :room float))
-
-(defn size [& pat]
-  (effect-fn pat :size float))
-
-(defn dry [& pat]
-  (effect-fn pat :dry float))
 

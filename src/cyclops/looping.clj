@@ -33,8 +33,7 @@
 
 
 (defn lcm-loops
-  "Combines loops of different period into a single loop of `lcm` period
-  TODO: Should period values of events change?"
+  "Combines loops of different period into a single loop of `lcm` period"
   [[period-a loop-a] [period-b loop-b]]
   (let [c-period (lcm period-a period-b)]
     [[c-period (cycle-loop (/ c-period period-a) [period-a loop-a])]
@@ -42,13 +41,13 @@
 
 
 (defn sync-periods
-  [ragged]
-  (let [loops (->> ragged
-                   (group-by :period)
-                   (reduce lcm-loops))
-        period (ffirst loops)
-        events (apply concat (map second loops))]
-    [period (sort evt-sort events)]))
+    [ragged]
+    (let [loops  (->> ragged
+                      (group-by :period)
+                      (reduce lcm-loops))
+          period (ffirst loops)
+          events (apply concat (map second loops))]
+      [period (sort evt-sort events)]))
 
 
 (defn slice

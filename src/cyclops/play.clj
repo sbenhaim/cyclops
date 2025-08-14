@@ -2,14 +2,13 @@
   (:require [cyclops.core :refer [start! restart! play! pause! continue! sh! speak! set-pattern! verbose cps freq-s o loops] :as sh]
             [cyclops.music
              :refer [cycle-chord note cycle-scale]
-             :rename {cycle-chord cc note n cycle-scale cs}
+             :rename {cycle-chord cc note nt cycle-scale cs}
              :as m]
-            [cyclops.looping :as l]
+            [cyclops.ops :refer :all]
             [cyclops.pattern
-             :refer [fit times cycle slow splice rep elongate prob euclid stack pick]
-             :rename {fit f times x cycle cyc slow slw splice spl elongate el prob ? euclid euc stack s}
-             :as p]
-            [cyclops.util :refer [cycle-n toggle!]]))
+             :refer [|+|]]
+            [cyclops.util :refer [cycle-n toggle!]]
+            [cyclops.pattern :as pat]))
 
 
 (sh/restart!)
@@ -47,3 +46,24 @@
     identity
     sh/create-event
     )
+
+
+(start!)
+(comment (o 0 (|+| (n (cs :c :minor :o 2)) (s* :supermandolin) (pan (range 0 1 0.1)) (legato* 8))))
+
+(sh!)
+(speak!)
+(pause!)
+
+
+(comment
+  (let [a (n* :c :c :c :c)
+        b (n* 0 3 5)
+        b (pat/->SinLoop 0 10 2)]
+    (pat/merge-loops (partial pat/merge-both +) a b :structure-from :both)))
+
+
+
+(let [a (s* :saw :tri)
+      b (n* 60 62 64)]
+  (pat/merge-loops (partial pat/merge-left +) a b :structure-from :left))

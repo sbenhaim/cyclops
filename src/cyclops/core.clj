@@ -78,8 +78,10 @@
 
 (comment (send-event {:s nil :start 0 :period 1}))
 
-(defn throw-dirt [evts]
-  (doseq [e evts] (send-dirt e)))
+(defn throw-dirt
+  ([evts] (throw-dirt 0.0 evts))
+  ([orbit evts]
+   (dorun (for [e evts] (future (send-dirt (assoc e :orbit (float orbit))))))))
 
 
 ;; Events, cycles loops
@@ -129,18 +131,18 @@
 
     (reset! job (at/at next-tick #(tick! next-tick) pool))
 
-    (run!
-     (fn [[period loop]]
-       (let [pos-from  (s->pos delta-s period)
-             slice-len (s->cycles freq-s)
-             pos-to    (+ pos-from slice-len)
-             slc       (l/slice [period loop] pos-from pos-to :mode :begin :offset? true)]
-         (when (seq slc)
-           (when @verbose
-             (println pos-from pos-to slice-len (mapv #(select-keys % [:start :s :n]) slc)))
-           (when-not @sh
-             (throw-dirt slc)))))
-     @loops)))
+    (dorun
+     (for [[orbit [period loop]] @loops]
+       (future
+         (let [pos-from  (s->pos delta-s period)
+               slice-len (s->cycles freq-s)
+               pos-to    (+ pos-from slice-len)
+               slc       (l/slice [period loop] pos-from pos-to :mode :begin :offset? true)]
+           (when (seq slc)
+             (when @verbose
+               (println pos-from pos-to slice-len (mapv #(select-keys % [:start :s :n]) slc)))
+             (when-not @sh
+               (throw-dirt orbit slc)))))))))
 
 ;; Controls
 
@@ -179,9 +181,7 @@
 
 (defn set-pattern!
   [pat]
-  (reset! loops (-> pat
-                    pat/process-pattern
-                    l/untangle-loops)))
+  (reset! loops pat))
 
 
 (defn clear-pattern!
@@ -220,16 +220,5 @@
 
 
 
-(defn o [n & pats]
-  (let [loops (l/|+| pats)
-        ;; loop (pat/effect-fn pat :orbit (constantly n))
-        ]
-    loops
-    #_(swap! loops assoc n )))
-
-
-(o 1 (pat/n :c :a :f :e) (pat/s :supersaw))
-
-
-(l/|+
- (pat/n :a :b :c))
+(defn o [n lps]
+  (swap! loops assoc n lps))
