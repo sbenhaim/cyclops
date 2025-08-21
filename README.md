@@ -1,8 +1,86 @@
-# Shhh
+# Cyclops
 
 Tidal / Strudel but in Clojure + Overtone.
 
 # Terminology
+
+## Song Components
+
+### Logical
+
+These are (mostly) logical components, and not really realted to the architecture of Cyclops.
+
+#### Arrangement: 
+
+The song. Composed of 1 or more sections.
+
+#### Section: 
+
+A part of the song (e.g., chorus, verse, bridge, drop, intro, outro, transition). 
+Consists of 1 or more "layers" played simultaneously.
+
+### Technical
+
+These define architectural layers of cyclops. Some may only be important to developing or modifying
+cyclops itself and not critical for most end users to understand.
+
+#### Layer
+Analogous to a song "track". Equivalent to a "pattern" in Tidal (though that
+word is used differently here) and associated with an `orbit` in Superdirt, which groups
+effects. A layer is composed of 1 or more merge groups.
+
+#### Merge Group
+1 or more controls + merge op for combining them. Analolgous to the `#`, `+`, and `|+` functions in Tidal.
+
+#### Control
+
+Provides semantics to abstact values represented in patterns. For instance, the number `[6]` could represent
+a note or an effect value or a sample number. Only once wrapped in a `control` does gain concrete meaning:
+
+`(n 6)`
+`(sz 6)`
+
+#### Cycle
+
+A record representing a collection of events with a common period. Implements the `Cyclic`
+protocol for all sliceable constructs.
+
+#### Pattern
+
+The defining characteristic of "Uzu" langs: A shorthand for representing cyclical musical events:
+
+``` clojure
+(s :bd [:sd :sd] (x 2 :hh))
+```
+
+```
+"bd [sd sd] hh*2"
+```
+
+#### Op
+
+Functions like `slow`, `cyc`, `rep` defining pattern-specific functionality.
+
+#### Event
+
+A value wrapped in the cycle-relative timing information for when it should start and stop.
+
+#### Value
+
+A (usually musical) value or logic for producing a value, often based on time context:
+
+`60`
+
+`:cm7`
+
+`(irand 10)`
+
+`(sin 0 10 2)`
+
+#### Time context
+
+Where we are in the arrangement in terms of seconds, cycle, and sub-cycle.
+
 
 ## Cycle
 

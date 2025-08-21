@@ -3,8 +3,8 @@
   (:require
    [overtone.osc :as osc]
    [overtone.at-at :as at]
-   [cyclops.pattern :as pat]
-   [cyclops.looping :as l]))
+   [cyclops.events :as e]
+   [cyclops.merge :as m]))
 
 ;; Constants
 
@@ -26,7 +26,7 @@
 (def pool (at/mk-pool))
 (def job (atom nil))
 
-(def loops (atom {1 []}))
+(def layers (atom {}))
 
 ;; Dirt
 
@@ -40,6 +40,7 @@
    :size 0.0
    :legato 1.0
    :orbit (int 0)
+   :pan 0.5
    :n (int 0)
    :latency default-latency-s})
 
@@ -81,7 +82,12 @@
 (defn throw-dirt
   ([evts] (throw-dirt 0.0 evts))
   ([orbit evts]
-   (dorun (for [e evts] (future (send-dirt (assoc e :orbit (float orbit))))))))
+   (dorun (for [e evts]
+            (future
+              (if (coll? (:s e))
+                (dorun (for [s (:s e)]
+                          (send-dirt (assoc e :s s :orbit (float orbit)))))
+                (send-dirt (assoc e :orbit (float orbit)))))))))
 
 
 ;; Events, cycles loops
@@ -113,6 +119,20 @@
 
 
 
+;; NOTE: Without syncing loops, you could get active events by adding (mod cycle period)
+;; NOTE: Unary functions could be used in non-terminal merge positions and composed
+;; `[inc] [(p + 10)] [(irand 10)] [5]` for merge left or flipped for merge right
+;; Merge could add/substract all numerics, apply/compose fns, call argless procs
+;; (layer 0 (grp merge-fn (ctrl (pat & vals)) (ctrl (pat & vales))) (grp merge-fn (ctrl pat & vals) ... ) ...))
+;; or
+;; (layer 0 (ctrl & pats))
+;; (layer 0 (ctrl & pats) (ctrl & pats)) ;; default merge fn
+;;
+;; On-tick: Slice on grp calls slice on ctrl (calls slice on gen, etc), merges
+;; results with merge fn (or default, which adds numerics, applies/composes fns,
+;; stacks non-nums) or stack, which stacks everything) and sends results to output
+
+
 (defn tick!
   "Shhh's heartbeat. Takes a single value `now` representing the 'ideal' execution time (to avoid drift), then:
 
@@ -132,15 +152,18 @@
     (reset! job (at/at next-tick #(tick! next-tick) pool))
 
     (dorun
-     (for [[orbit [period loop]] @loops]
+     (for [[orbit mg] @layers]
        (future
-         (let [pos-from  (s->pos delta-s period)
+         (let [period    (e/period mg)
+               from      (s->pos delta-s period)
                slice-len (s->cycles freq-s)
-               pos-to    (+ pos-from slice-len)
-               slc       (l/slice [period loop] pos-from pos-to :mode :begin :offset? true)]
+               to        (+ from slice-len)
+               tc        (e/tc from to)
+               slc       (e/slice mg tc nil)
+               slc       (e/offset-slice from slc)]
            (when (seq slc)
              (when @verbose
-               (println pos-from pos-to slice-len (mapv #(select-keys % [:start :s :n]) slc)))
+               (println from to slice-len (mapv #(select-keys % [:start :s :n]) slc)))
              (when-not @sh
                (throw-dirt orbit slc)))))))))
 
@@ -179,14 +202,10 @@
   []
   (reset! sh false))
 
-(defn set-pattern!
-  [pat]
-  (reset! loops pat))
-
 
 (defn clear-pattern!
   []
-  (reset! loops {}))
+  (reset! layers {}))
 
 
 (defn start!
@@ -213,12 +232,11 @@
   (start!))
 
 
-(defn play! [some-loops]
-  (reset! loops some-loops)
+(defn play! []
   (speak!)
   (continue!))
 
 
 
-(defn o [n lps]
-  (swap! loops assoc n lps))
+(defn o [n & mgs]
+  (swap! layers assoc n mgs))

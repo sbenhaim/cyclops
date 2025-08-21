@@ -24,12 +24,6 @@
        loop))))
 
 
-(defn evt-sort
-  [a b]
-  (let [c (compare (:start a) (:start b))]
-    (if (not= c 0)
-      c
-      (compare (:end a) (:end b)))))
 
 
 (defn lcm-loops
