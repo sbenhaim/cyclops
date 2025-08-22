@@ -9,6 +9,7 @@
   e/Cyclic
   (period [_] (e/period cycle))
   (events [this] (e/slice this (e/tc 0 (e/period this)) {}))
+  (slice [this ctx] (e/slice this ctx {}))
   (slice [_ ctx opts]
     (let [evts (e/slice cycle ctx opts)]
       (map (fn [e]

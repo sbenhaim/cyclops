@@ -37,7 +37,9 @@
 (defprotocol Cyclic
   (period [this])
   (events [this])
-  (slice [this ^TimeContext tc opts]))
+  (slice
+    [this ^TimeContext tc]
+    [this ^TimeContext tc opts]))
 
 
 (defn cycle-events
@@ -94,6 +96,7 @@
   Cyclic
   (period [_] period)
   (events [_] events)
+  (slice [this tc] (-slice- this (:from tc) (:to tc) {:mode :starts-during}))
   (slice [this tc opts] (-slice- this (:from tc) (:to tc) opts)))
 
 

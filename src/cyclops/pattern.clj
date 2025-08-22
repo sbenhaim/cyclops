@@ -169,7 +169,7 @@
 (defop cyc
   "Plays one child per cycle."
   [children]
-  (operate [_ ctx] (apply-slow slow (sum-weights children) children ctx)))
+  (operate [_ ctx] (apply-slow (sum-weights children) children ctx)))
 
 
 (defop prob

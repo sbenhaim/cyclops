@@ -1,69 +1,36 @@
 (ns cyclops.play
-  (:require [cyclops.core :refer [start! restart! play! pause! continue! sh! speak! set-pattern! verbose cps freq-s o loops] :as sh]
-            [cyclops.music
-             :refer [cycle-chord note cycle-scale]
-             :rename {cycle-chord cc note nt cycle-scale cs}
-             :as m]
-            [cyclops.ops :refer :all]
-            [cyclops.pattern
-             :refer [|+|]]
-            [cyclops.util :refer [cycle-n toggle!]]
-            [cyclops.pattern :as pat]))
+  (:require
+   [cyclops.pattern :refer [cyc cyc*] :as p]
+   [cyclops.control :refer [n s s* n*]]
+   [cyclops.events :as e]
+   [cyclops.merge :as m :refer [|+|]]
+   [cyclops.util :refer [toggle!]]
+   [cyclops.core :refer [o] :as c]))
 
 
-(sh/restart!)
-(toggle! verbose)
-(toggle! sh/debug-osc)
-
-(do
-  (start!))
-
-(start!)
-(restart!)
-(sh/clear-pattern!)
-(reset! loops (l/pattern->loops (apply ? 0.9 (repeat 16 :hh))))
-(pause!)
-(sh/continue!)
-
-(sh/clear-pattern!)
-(reset! cps 1)
-
-(swap! sh/debug-osc not)
-(o 0 (times 16 :bd))
-
-(pause!)
+(time
+ (-> [:bd]
+     s))
 
 
-(l/slice
- (first @sh/loops)
- 0
- 2)
+(o 0 (|+| (n* :c :a :f :e) (s* :supermandolin)))
 
-(-> @loops
-    first
-    second
-    last
-    identity
-    sh/create-event
-    )
+e/offset-slice 1/4
+(e/slice
+ (|+| (s* :bd))
+ (e/tc 0 1/4))
 
+(time
+ (doall
+  (|+| (n* 0 2 4 5) (s* :supermandolin))))
 
-(start!)
-(comment (o 0 (|+| (n (cs :c :minor :o 2)) (s* :supermandolin) (pan (range 0 1 0.1)) (legato* 8))))
+(c/start!)
 
-(sh!)
-(speak!)
-(pause!)
+(toggle! c/verbose)
+(toggle! c/sh)
 
+(c/pause!)
+(c/continue!)
+(c/pause!)
 
-(comment
-  (let [a (n* :c :c :c :c)
-        b (n* 0 3 5)
-        b (pat/->SinLoop 0 10 2)]
-    (pat/merge-loops (partial pat/merge-both +) a b :structure-from :both)))
-
-
-
-(let [a (s* :saw :tri)
-      b (n* 60 62 64)]
-  (pat/merge-loops (partial pat/merge-left +) a b :structure-from :left))
+(@c/layers 0)

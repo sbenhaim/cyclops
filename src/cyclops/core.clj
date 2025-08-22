@@ -151,21 +151,20 @@
 
     (reset! job (at/at next-tick #(tick! next-tick) pool))
 
-    (dorun
-     (for [[orbit mg] @layers]
-       (future
-         (let [period    (e/period mg)
-               from      (s->pos delta-s period)
-               slice-len (s->cycles freq-s)
-               to        (+ from slice-len)
-               tc        (e/tc from to)
-               slc       (e/slice mg tc nil)
-               slc       (e/offset-slice from slc)]
-           (when (seq slc)
-             (when @verbose
-               (println from to slice-len (mapv #(select-keys % [:start :s :n]) slc)))
-             (when-not @sh
-               (throw-dirt orbit slc)))))))))
+    (doseq [[orbit cycl] @layers]
+      #_future
+      (let [period    (e/period cycl)
+            from      (s->pos delta-s period)
+            slice-len (s->cycles freq-s)
+            to        (+ from slice-len)
+            tc        (e/tc from to)
+            slc       (e/slice cycl tc)
+            slc       (e/offset-slice from slc)]
+        (when (seq slc)
+          (when @verbose
+            (println from to slice-len (mapv #(select-keys % [:start :s :n]) slc)))
+          (when-not @sh
+            (throw-dirt orbit slc)))))))
 
 ;; Controls
 
@@ -238,5 +237,5 @@
 
 
 
-(defn o [n & mgs]
-  (swap! layers assoc n mgs))
+(defn o [n cyc]
+  (swap! layers assoc n cyc))
