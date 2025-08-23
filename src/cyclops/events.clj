@@ -30,8 +30,8 @@
   (period [this])
   (events [this])
   (slice
-    [this ^TimeContext tc]
-    [this ^TimeContext tc opts]))
+    [this from to]
+    [this from to opts]))
 
 
 (defn cycle-events
@@ -72,7 +72,7 @@
   (assert (#{:starts-during :ends-during :active-during} mode))
   (let [evts (events cyc)
         p    (period cyc)]
-    (if (and (zero? from) (= to p)) evts
+    (if (and (zero? from) (= to p)) (if realize? (map realize evts) evts)
         (let [to                (if (<= to from) (+ to p) to)
               loop              (if (> to p) (cycle-events cyc) evts)
               [key1 key2 compr] (case mode
@@ -102,8 +102,8 @@
   Cyclic
   (period [_] period)
   (events [_] events)
-  (slice [this tc] (-slice- this (:from tc) (:to tc) {:mode :starts-during}))
-  (slice [this tc opts] (-slice- this (:from tc) (:to tc) opts)))
+  (slice [this from to] (-slice- this from to {:mode :starts-during}))
+  (slice [this from to opts] (-slice- this from to opts)))
 
 
 

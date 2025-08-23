@@ -1,10 +1,12 @@
 (ns cyclops.pattern
   (:require
    [cyclops.events :as e]
+   [cyclops.music :as m]
    [cyclops.util :refer [rot cycle-n]]
-   [clojure.string :as s]))
+   [clojure.string :as s]
+   [cyclops.pattern :as pat]))
 
-
+;; Ops
 
 (defprotocol Op
   (weight [this])
@@ -56,7 +58,7 @@
                        (if (op? child)
                          (operate child ctx) ;; If child is an op, apply with inherited context
                          ;; Otherwise, add timing information to the event. Event keys can override (e.g., `length`).
-                         (e/->Event (if (e/value? child) child child #_(e/->BasicValue child)) ;; TODO: Value realization
+                         (e/->Event child
                                     start
                                     (+ start length)
                                     period))))))))
@@ -113,9 +115,9 @@
   (operate [this ^OpContext context] (fit-children this context)))
 
 
-(defop x
-  "Squeezes all of its events into the enclosing segment."
-  [n children]
+(defrecord TimesOp [n children]
+  Op
+  (weight [_] 1)
   (operate [_ ctx]
            (let [children (cycle-n n children)]
              (fit-children children ctx))))
@@ -130,20 +132,17 @@
                                   :segment-length segment-length))))
 
 
-;; Splicing Ops
-
-(defop spl
-  "Splices events into parent context adjusting segmentation."
-  [children]
+(defrecord SpliceOp [children]
+  Op
   (weight [_] (sum-weights children))
   (operate [_ ctx] (splice children ctx)))
 
 
-(defop rep
-  "Repeats `x` times without speading up adjusting segmentation."
-  [x children]
+(defrecord RepeatOp [x children]
+  Op
   (weight [_] (* x (sum-weights children)))
   (operate [_ ctx] (splice (cycle-n x children) ctx)))
+
 
 ;; Period Ops
 
@@ -160,24 +159,22 @@
                                   :segment-length segment-length))))
 
 
-(defop slow
-  "Stretches children across n cycles."
-  [x children]
+(defrecord SlowOp [x children]
+  Op
+  (weight [_] 1)
   (operate [_ ctx] (apply-slow x children ctx)))
 
 
-(defop cyc
-  "Plays one child per cycle."
-  [children]
+(defrecord CycleOp [children]
+  Op
+  (weight [_] 1)
   (operate [_ ctx] (apply-slow (sum-weights children) children ctx)))
 
 
-(defop prob
-  "Plays event with probability `x` (0 to 1). Plays rest otherwise.
-  If applied to group, prob is applied to *each* event, not to entire group."
-  [x children]
+(defrecord MaybeOp [x children]
+  Op
   (weight [_] (sum-weights children))
-  (operate [_ ctx] (splice (map (fn [e] #(when (< (rand) x) e)) children))))
+  (operate [_ ctx] (splice (map (fn [e] #(when (< (rand) x) e)) children) ctx)))
 
 
 (defn bjork
@@ -193,28 +190,25 @@
             (conj res (concat (first ps) (first os)))))))
 
 
-(defop euc
-  "Euclidian rhythm of `k` active of `n` switches, optionally rotated by `r`."
-  [args val]
-  (weight [_] (* (second args) (weigh val)))
+(defrecord EuclidianOp [k n r val]
+  Op
+  (weight [_] (* n (weigh val)))
   (operate [_ ctx]
-           (let [[k n & [r]] args
-                 mask        (bjork (repeat k [true]) (repeat (- n k) [nil]))
-                 mask        (rot mask (or r 0))
-                 children    (map #(and % val) mask)]
-             (splice children ctx))))
+    (let [mask     (bjork (repeat k [true]) (repeat (- n k) [nil]))
+          mask     (rot mask (or r 0))
+          children (map #(and % val) mask)]
+      (splice children ctx))))
 
 
-(defop pick
-  "Each loop, randomly chooses one of its children."
-  [children]
+(defrecord PickOp [children]
+  Op
   (weight [_] (weigh (first children)))
   (operate [_ ctx] (splice [#(rand-nth children)] ctx)))
 
 
-(defop elongate
-  "Stretches note across `n` segments."
+(defrecord ElongateOp
   [n children]
+  Op
   (weight [_] (* n (sum-weights children)))
   (operate [_ {:keys [segment-length] :as context}]
            (let [n              (sum-weights children)
@@ -223,8 +217,62 @@
              (apply-timing children (assoc context :segment-length segment-length :spacing spacing)))))
 
 
-(defop stack
-  "Plays contained patterns or events simultaneously. Can be used to play chords."
-  [children]
+(defrecord StackOp [children]
+  Op
   (weight [_] (max (sum-weights children)))
   (operate [_ ctx] (mapcat #(operate % ctx) (map vector children))))
+
+
+;; Controls
+
+(defrecord Control [cycle key value-tx]
+  e/Cyclic
+  (period [_] (e/period cycle))
+  (events [this] (e/slice this 0 (e/period this) {:realize? true}))
+  (slice [this from to] (e/slice this from to {}))
+  (slice [_ from to opts]
+    (let [evts (e/slice cycle from to opts)]
+      (map (fn [e]
+             (-> e
+                 (assoc key (value-tx (:value e)))
+                 (dissoc :value)))
+           evts))))
+
+
+(defmacro defcontrol
+    {:clj-kondo/lint-as :clojure.core/defn :clj-kondo/ignore true}
+    ([control doc value-tx]
+     `(defcontrol ~control ~doc ~(keyword control) ~value-tx))
+    ([control doc param value-tx]
+     `(do
+        (defn ~control ~doc [pat#]
+          (->Control (pat/process-pattern pat#) ~param ~value-tx))
+        (defn ~(symbol (str control "*")) ~doc [& pat#]
+          (~control pat#)))))
+
+
+(defn ->control
+  [param value-tx pat]
+  (->Control (pat/process-pattern pat) param value-tx))
+
+
+(defn rest? [v]
+  (or (nil? v) (#{:- "~"} v)))
+
+
+(defn parse-num
+  [n]
+  (cond
+    (rest? n)    nil
+    (keyword? n) (m/note n)
+    (string? n)  (m/note n)
+    (number? n)  (float n)
+    :else        n))
+
+
+(defn parse-sound
+  [s]
+  (cond
+    (rest? s)    nil
+    (keyword? s) (name s)
+    :else        s))

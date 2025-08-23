@@ -8,10 +8,10 @@
 (defrecord Control [cycle key value-tx]
   e/Cyclic
   (period [_] (e/period cycle))
-  (events [this] (e/slice this (e/tc 0 (e/period this)) {}))
-  (slice [this ctx] (e/slice this ctx {}))
-  (slice [_ ctx opts]
-    (let [evts (e/slice cycle ctx opts)]
+  (events [this] (e/slice this 0 (e/period this) {}))
+  (slice [this from to] (e/slice this from to {}))
+  (slice [_ from to opts]
+    (let [evts (e/slice cycle from to opts)]
       (map (fn [e]
              (-> e
                  (assoc key (value-tx (:value e)))
