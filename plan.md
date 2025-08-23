@@ -1,7 +1,11 @@
 # Shhh Plan
 
 - [x] Get coding agents involved
-- [-] Remove order for notes when untangling loops
+- [x] Remove order for notes when untangling loops
+- [ ] Break out Ops from Pattern
+- [ ] Separate function realization from merge
+- [ ] Figure out why timing doesn't work
+- [ ] Stack merge
 - [ ] Core Tidal/Strudel stuff
   - [x] OSC
   - [x] Cycling timer
@@ -10,9 +14,9 @@
   - [x] Pattern notation
   - [x] Pattern mixing
   - [x] Euc
-  - [ ] Splice as default for []s?
+  - [-] Splice as default for []s?
   - [/] Effects
-  - [ ] Oscillators
+  - [/] Oscillators
   - [ ] Tidal/strudel reference
 - [x] Randomized events
 - [/] Sampling synth with pitch control like superdough

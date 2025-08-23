@@ -143,7 +143,7 @@
   "Repeats `x` times without speading up adjusting segmentation."
   [x children]
   (weight [_] (* x (sum-weights children)))
-  (operate [_ ctx] (splice (cycle-n children) ctx)))
+  (operate [_ ctx] (splice (cycle-n x children) ctx)))
 
 ;; Period Ops
 

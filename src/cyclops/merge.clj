@@ -46,7 +46,7 @@
     (let [remerge (select-keys a unmerged)
           start (max (:start a) (:start b))
           end   (min (:end a) (:end b))
-          tc (assoc tc :start start :end end)]
+          tc (assoc tc :from start :to end)]
       (-> (merge-with (with-fn tc) b a) ;; Args are switched since clojure merge goes opposite of uzu merge
           (merge remerge)
           (assoc :start start :end end)))))
@@ -75,7 +75,7 @@
                [e])))
          []
          sa)]
-    merged))
+    (map e/realize merged)))
 
 
 (defrecord MergeGroup [merge-fn cycles structure-from]

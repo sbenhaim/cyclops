@@ -1,7 +1,8 @@
 (ns cyclops.events
   (:require
    [clojure.math.numeric-tower :refer [lcm]]
-   [clojure.pprint :refer [print-table]]))
+   [clojure.pprint :refer [print-table]]
+   [cyclops.util :refer [arity]]))
 
 
 (defrecord TimeContext [from to])
@@ -10,24 +11,15 @@
 (defn tc [from to]
   (map->TimeContext {:from from :to to}))
 
-(defprotocol Value
-  (realize [this ^TimeContext ctx]))
-
-
-(defn value? [e] (satisfies? Value e))
-
-
-(defrecord BasicValue [v]
-  Value
-  (realize [_ _] v))
-
 
 (defrecord Event [value start end period]
   Comparable
   (compareTo [this that]
-    (compare [(:start this) (:end this)] [(:start that) (:end that)]))
-  Value
-  (realize [_ ctx] (realize value ctx)))
+    (compare [(:start this) (:end this)] [(:start that) (:end that)])))
+
+
+(defn evt->tc [^Event e]
+  (tc (:start e) (:end e)))
 
 
 (defn length [^Event e]
@@ -62,9 +54,21 @@
        cycle))))
 
 
+(defn realize-val [tc v]
+  (if (fn? v)
+      (case (arity v)
+        0 (v)
+        (v tc))
+      v))
 
 
-(defn -slice- [cyc from to {:keys [mode] :or {mode :starts-during}}]
+(defn realize [^Event e]
+  (let [tc (evt->tc e)
+        f (partial realize-val tc)]
+    (update-vals e f)))
+
+
+(defn -slice- [cyc from to {:keys [mode realize?] :or {mode :starts-during realize? false}}]
   (assert (#{:starts-during :ends-during :active-during} mode))
   (let [evts (events cyc)
         p    (period cyc)]
@@ -80,7 +84,9 @@
                                        (drop-while #(compr from (key1 %)))
                                        (take-while #(> to (key2 %))))
                                       loop)]
-          slc))))
+          (if realize?
+            (map realize slc)
+            slc)))))
 
 
 
@@ -139,13 +145,17 @@
 
 
 
-(defn sin [& {:keys [min max period] :or {min 0 max 1 period 1}}]
-  (fn [_ ^TimeContext {:keys [from] :as tc}]
-    (let [TAU (* 2 Math/PI)
-          mult (-> max (- min) (/ 2))
-          base (-> from (* TAU) (/ period) Math/sin (+ 1) (* mult))
-          n (+ base min)]
-      n)))
+(defn sin
+  ([] (sin 0 1 1))
+  ([max] (sin 0 max 1))
+  ([min max] (sin min max 1))
+  ([min max period]
+   (fn [^TimeContext {:keys [from]}]
+     (let [TAU  (* 2 Math/PI)
+           mult (-> max (- min) (/ 2))
+           base (-> from (* TAU) (/ period) Math/sin (+ 1) (* mult))
+           n    (+ base min)]
+       n))))
 
 
 (defn rand

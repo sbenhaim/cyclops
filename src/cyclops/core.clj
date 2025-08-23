@@ -158,7 +158,7 @@
             slice-len (s->cycles freq-s)
             to        (+ from slice-len)
             tc        (e/tc from to)
-            slc       (e/slice cycl tc)
+            slc       (e/slice cycl tc {:realize? true})
             slc       (e/offset-slice from slc)]
         (when (seq slc)
           (when @verbose
