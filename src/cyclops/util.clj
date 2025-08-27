@@ -1,4 +1,6 @@
-(ns cyclops.util)
+(ns cyclops.util
+  (:require
+   [clojure.math.combinatorics :as combo]))
 
 (defn cycle-n
   [n seq]
@@ -44,9 +46,44 @@
 (comment (arity (partial inc 1)))
 
 
-
 (defn divisable? [n divisor]
   (zero? (mod n divisor)))
 
 
-(comment (divisable? 3 9))
+(defn reduplicate
+  "Convert a map with collections for some of the keys into a list of maps with scalar keys.
+  NOTE: List grows combinatorily."
+  [m]
+  (let [coll-keys (filter #(coll? (m %)) (keys m))
+        fixed-keys (remove #(coll? (m %)) (keys m))
+        coll-values (map m coll-keys)]
+    (map (fn [vals]
+           (merge (zipmap coll-keys vals)
+                  (select-keys m fixed-keys)))
+         (apply combo/cartesian-product coll-values))))
+
+
+(defn smart-splat [col]
+  (if (and (sequential? (first col)) (= 1 (count col)))
+    (first col)
+    col))
+
+
+(defn p
+  "Partial, but works with the `arity` fn for arities up to 2."
+  [f a]
+  (case (arity f)
+    0 (throw (RuntimeException. "Partial called on argless fn."))
+    1 #(f a)
+    2 #(f a %)
+    (partial f a)))
+
+
+(defn cmp
+  "Compose, but only accepts 2 fns and works with the `arity` fn for arities up to 2."
+  [f1 f2]
+  (case (arity f2)
+    0 #(f1 (f2))
+    1 #(f1 (f2 %))
+    2 #(f1 (f2 %1 %2))
+    (comp f1 f2)))

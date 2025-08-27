@@ -5,28 +5,54 @@
 (def unmerged #{:start :end :period})
 
 
-(defn merge-with-fn
-  [f]
-  (fn mrg [b a] ;; Args are switched since clojure merge goes opposite of uzu merge
+(defn stack-merge [a b]
+  (if (coll? a)
+    (conj a b)
+    [a b]))
+
+
+(defn calc-or-stack-merge [f]
+  (fn [a b]
+    (if (and b (or (and (number? a) (number? b))
+                   (and (number? a) (nil? b))
+                   (and (nil? a) (number? b))))
+      (f (or a 0) (or b 0))
+      [a b])))
+
+
+(defn merge-with-fn [f]
+  (fn [b a]
     (fn [tc]
-      (let [a (realize-val tc a)
-            b (realize-val tc b)]
-        (cond
+      (let [b (realize-val tc b)
+            a (realize-val tc a)]
+        (if (fn? b) (b a tc)
+            (f a b))))))
 
-          (fn? b) (b a tc)
 
-          (or (and (number? a) (number? b))
-              (and (number? a) (nil? b))
-              (and (nil? a) (number? b))) (f (or a 0) (or b 0))
+#_(defn merge-with-fn
+    [f]
+    (fn mrg [b a] ;; Args are switched since clojure merge goes opposite of uzu merge
+      (fn [tc]
+        (let [a (realize-val tc a)
+              b (realize-val tc b)]
+          (cond
 
-          :else [a b])))))
+            (fn? b) (b a tc)
+
+            (or (and (number? a) (number? b))
+                (and (number? a) (nil? b))
+                (and (nil? a) (number? b))) (f (or a 0) (or b 0))
+
+            :else [a b])))))
 
 
 
 (defn merge-left
   [with-fn]
   (fn [a b]
-    (let [remerge (select-keys a unmerged)]
+    (let [remerge (select-keys a unmerged)
+          a (apply dissoc a unmerged)
+          b (apply dissoc b unmerged)]
       (-> (merge-with with-fn b a) ;; Args are switched since clojure merge goes opposite of uzu merge
           (merge remerge)))))
 
@@ -34,11 +60,9 @@
 (defn merge-both
   [with-fn]
   (fn [a b]
-    (let [remerge (select-keys a unmerged)
-          start (max (:start a) (:start b))
+    (let [start (max (:start a) (:start b))
           end   (min (:end a) (:end b))]
-      (-> (merge-with with-fn b a) ;; Args are switched since clojure merge goes opposite of uzu merge
-          (merge remerge)
+      (-> ((merge-left with-fn) a b)
           (assoc :start start :end end)))))
 
 
@@ -72,13 +96,18 @@
 (defrecord MergeGroup [merge-fn cycles structure-from]
   e/Cyclic
   (period [_] (apply e/lcp cycles))
-  (events [this] (e/slice this 0 (e/period this) {:realize? true}))
-  (slice [this from to] (e/slice this from to {}))
+  (events [this] (e/events this true))
+  (events [this realize?] (e/slice this 0 (e/period this) {:realize? realize?}))
   (slice [_this from to opts]
+    (assert (fn? merge-fn) "First arg to `merge` op must be a fn.")
     (if (= 1 (count cycles))
       (e/slice (first cycles) from to opts)
       (reduce (fn [a b] (apply merge-cycles merge-fn a b from to :structure-from structure-from opts))
               cycles))))
+
+
+(defn ->mg [f cycles structure-from]
+  (->MergeGroup (merge-with-fn f) cycles structure-from))
 
 (comment
   (require '[cyclops.control :refer [n* s* pan]])
@@ -90,17 +119,4 @@
     #_(merge-cycles f a b (e/tc 0 1) :structure-from :left)
 
     (e/events
-       (->MergeGroup f [a b] :both))))
-
-
-
-(defn |+ [& cycles]
-  (->MergeGroup (merge-with-fn +) cycles :left))
-
-
-(defn +| [& cycles]
-  (->MergeGroup (merge-with-fn +) (reverse cycles) :left))
-
-
-(defn |+| [& cycles]
-  (->MergeGroup (merge-with-fn +) cycles :both))
+     (->MergeGroup f [a b] :both))))

@@ -2,7 +2,7 @@
   (:require
    [cyclops.events :as e]
    [cyclops.music :as m]
-   [cyclops.util :refer [rot cycle-n]]
+   [cyclops.util :refer [rot cycle-n cmp]]
    [clojure.string :as s]
    [cyclops.pattern :as pat]))
 
@@ -127,7 +127,7 @@
   [children ^OpContext {:keys [segment-length] :as context}]
   (let [n              (sum-weights children)
         segment-length (/ segment-length n)]
-    (fit-children children (assoc context
+    (apply-timing children (assoc context
                                   :spacing segment-length
                                   :segment-length segment-length))))
 
@@ -225,16 +225,22 @@
 
 ;; Controls
 
+(defn apply-tx
+  [tx v]
+  (if (fn? v)
+    (cmp tx v)
+    (tx v)))
+
 (defrecord Control [cycle key value-tx]
   e/Cyclic
   (period [_] (e/period cycle))
-  (events [this] (e/slice this 0 (e/period this) {:realize? true}))
-  (slice [this from to] (e/slice this from to {}))
+  (events [this] (e/events this true))
+  (events [this realize?] (e/slice this 0 (e/period this) {:realize? realize?}))
   (slice [_ from to opts]
     (let [evts (e/slice cycle from to opts)]
       (map (fn [e]
              (-> e
-                 (assoc key (value-tx (:value e)))
+                 (assoc key (apply-tx value-tx (:value e)))
                  (dissoc :value)))
            evts))))
 

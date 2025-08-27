@@ -2,6 +2,12 @@
   (:require [overtone.music.pitch :as m]))
 
 
+(defn note-like?
+  [sym]
+  (re-find #"^([a-gA-G][bB]?[#]?)(\d*)$" (name sym)))
+
+
+
 (defn parse-note [sym]
   (let [note-match #"([a-gA-G][bB]?[#]?)(\d*)"
         [orig note octave] (re-find note-match (name sym))]
@@ -48,7 +54,8 @@
 
 
 (defn cycle-chord
-  [sym & {:keys [o n incl] :or {incl 0}}]
+  [sym & {:keys [o n incl] :or {incl 0
+                                o 1}}]
   (let [{:keys [midi chord]} (parse-chord sym)
         notes (m/chord midi chord)
         cyc (cycle+12 notes)]
@@ -57,9 +64,7 @@
       o (take (+ incl (* o (count notes))) cyc)
       :else cyc)))
 
-
-(comment (cycle-chord :cm7 :o 2))
-
+;; TODO: Expose shorted form in ops?
 
 (defn scale
   [root scale-name]
@@ -67,7 +72,8 @@
 
 (defn cycle-scale
   [root scale-name & {:keys [o n incl]
-                      :or {incl 0}}]
+                      :or {incl 0
+                           o 1}}]
   (let [notes (butlast (scale root scale-name))
         cyc   (cycle+12 notes)]
     (cond

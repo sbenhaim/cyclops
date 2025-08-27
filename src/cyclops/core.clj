@@ -3,7 +3,10 @@
   (:require
    [overtone.osc :as osc]
    [overtone.at-at :as at]
-   [cyclops.events :as e]))
+   [cyclops.events :as e]
+   [cyclops.util :refer [reduplicate]]
+   [cyclops.ops :as ops]
+   [cyclops.core :as c]))
 
 ;; Constants
 
@@ -11,7 +14,7 @@
 (def default-host "localhost")
 (def default-cps 1)
 (def default-latency-s 0.1)
-(def freq-s 1 #_1/10)
+(def freq-s 1/10)
 
 ;; Mutables
 
@@ -84,12 +87,10 @@
 (defn throw-dirt
   ([evts] (throw-dirt 0.0 evts))
   ([orbit evts]
-   (dorun (for [e evts]
-            #_future
-            (if (coll? (:s e))
-              (dorun (for [s (:s e)]
-                       (send-dirt (assoc e :s s :orbit (float orbit)))))
-              (send-dirt (assoc e :orbit (float orbit))))))))
+   (doseq [e evts]
+     #_future
+     (doseq [es (reduplicate e)]
+       (send-dirt (assoc es :orbit (float orbit)))))))
 
 
 ;; Events, cycles loops
@@ -237,6 +238,18 @@
   (continue!))
 
 
+(defn hoist-merge
+  [cyc]
+  (if (> (count cyc) 1)
+    (ops/<+> + cyc)
+    (first cyc)))
 
-(defn o [n cyc]
-  (swap! layers assoc n cyc))
+
+(defn o
+  [n & cyc]
+  (swap! layers assoc n (hoist-merge cyc)))
+
+
+
+(defn once [& cyc]
+  (throw-dirt (e/events (hoist-merge cyc) true)))

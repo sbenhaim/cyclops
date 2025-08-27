@@ -1,7 +1,6 @@
 (ns cyclops.events
   (:require
    [clojure.math.numeric-tower :refer [lcm]]
-   [clojure.pprint :refer [print-table]]
    [cyclops.util :refer [arity]]))
 
 
@@ -28,10 +27,10 @@
 
 (defprotocol Cyclic
   (period [this])
-  (events [this])
-  (slice
-    [this from to]
-    [this from to opts]))
+  (events
+    [this]
+    [this realize?])
+  (slice [this from to opts]))
 
 
 (defn cycle-events
@@ -39,7 +38,7 @@
   ([cyc] (cycle-events nil cyc))
   ([n cyc]
    (let [period (period cyc)
-         evts (events cyc)
+         evts (events cyc false)
          cycle (->> evts
                     repeat
                     (mapcat
@@ -70,7 +69,7 @@
 
 (defn -slice- [cyc from to {:keys [mode realize?] :or {mode :starts-during realize? false}}]
   (assert (#{:starts-during :ends-during :active-during} mode))
-  (let [evts (events cyc)
+  (let [evts (events cyc false)
         p    (period cyc)]
     (if (and (zero? from) (= to p)) (if realize? (map realize evts) evts)
         (let [to                (if (<= to from) (+ to p) to)
@@ -101,10 +100,18 @@
 (defrecord Cycle [period events]
   Cyclic
   (period [_] period)
-  (events [_] events)
-  (slice [this from to] (-slice- this from to {:mode :starts-during}))
+  (events [this] (events this true))
+  (events [_ realize?]
+    (if realize? (map realize events) events))
   (slice [this from to opts] (-slice- this from to opts)))
 
+
+(extend-type clojure.lang.Sequential
+  Cyclic
+  (period [_] 1)
+  (events [this] (events this true))
+  (events [this realize?] (if realize? (map realize this) this))
+  (slice [this from to opts] (-slice- this from to opts)))
 
 
 (defn lcp [& cycles]
@@ -122,7 +129,7 @@
 (defn sync-periods
   [a b]
   (let [[a b] (normalize-periods a b)]
-    (->Cycle (:period a) (concat (:events a) (:events b)))))
+    (->Cycle (period a) (concat (events a false) (events b false)))))
 
 
 
