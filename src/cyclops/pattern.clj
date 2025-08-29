@@ -1,10 +1,32 @@
-(ns cyclops.pattern
-  (:require
+
+
+
+(defn compart
+  "Combo comp and partial. Given `f` fn of arity 1, if `f-or-v` is a fn, compposes `f` and `f-or-v` into
+  a fn of the same arity as `f-or-v` (unlike standard `comp` which returns variadic fn).
+  If `f-or-v` is a val, returns a `fn` of no args representing the partial application of
+  `f-or-v` to `f`.
+
+  Effectively provides flexible way to defer exection of `f`."
+  [f f-or-v]
+  (if (fn? f-or-v) (cmp f f-or-v) (p f f-or-v)))
+
+
+(defn realize
+  [f-or-v]
+  (if (fn? f-or-v) (f-or-v) f-or-v))
+
+
+(defn realize-chain [[f & fs]]
+  (reduce #(%2 %1) (realize f) fs))
+
+
+(realize-chain
+ (conj [(fn [] 1)] inc #(* 2 %)))
    [cyclops.events :as e]
    [cyclops.music :as m]
-   [cyclops.util :refer [rot cycle-n cmp]]
-   [clojure.string :as s]
-   [cyclops.pattern :as pat]))
+   [cyclops.util :refer [rot cycle-n cmp p]]
+   [clojure.string :as s]))
 
 ;; Ops
 
@@ -108,6 +130,13 @@
                              :segment-length segment-length)))))
 
 
+(defrecord FitOp [children]
+  Op
+  (weight [_] 1)
+  (operate [_ ctx]
+    (fit-children children ctx)))
+
+
 ;; Any sequence treated like Tidal's `fastcat`, squeezing notes into the containing context.
 (extend-type clojure.lang.Sequential
   Op
@@ -119,8 +148,8 @@
   Op
   (weight [_] 1)
   (operate [_ ctx]
-           (let [children (cycle-n n children)]
-             (fit-children children ctx))))
+    (let [children (cycle-n n children)]
+      (fit-children children ctx))))
 
 
 (defn splice
@@ -219,7 +248,7 @@
 
 (defrecord StackOp [children]
   Op
-  (weight [_] (max (sum-weights children)))
+  (weight [_] (apply max (map weigh children)))
   (operate [_ ctx] (mapcat #(operate % ctx) (map vector children))))
 
 
@@ -231,11 +260,13 @@
     (cmp tx v)
     (tx v)))
 
+
 (defrecord Control [cycle key value-tx]
   e/Cyclic
   (period [_] (e/period cycle))
-  (events [this] (e/events this true))
   (events [this realize?] (e/slice this 0 (e/period this) {:realize? realize?}))
+  (set-events [_ evts] (e/set-events cycle evts))
+  (update-events [_ f] (e/update-events cycle f))
   (slice [_ from to opts]
     (let [evts (e/slice cycle from to opts)]
       (map (fn [e]
@@ -259,7 +290,7 @@
 
 (defn ->control
   [param value-tx pat]
-  (->Control (pat/process-pattern pat) param value-tx))
+  (->Control (process-pattern pat) param value-tx))
 
 
 (defn rest? [v]

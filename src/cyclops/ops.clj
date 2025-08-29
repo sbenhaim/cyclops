@@ -1,8 +1,9 @@
 (ns cyclops.ops
   (:require
    [cyclops.pattern :as p]
-   [cyclops.util :refer [smart-splat]]
-   [cyclops.merge :as m]))
+   [cyclops.util :refer [smart-splat p]]
+   [cyclops.merge :as m]
+   [cyclops.events :as e]))
 
 
 (defn x
@@ -138,7 +139,7 @@
 
 
 (defn c| [f & cycles]
-  (apply c| (m/calc-or-stack-merge f) cycles))
+  (apply f| (m/calc-or-stack-merge f) cycles))
 
 (defn c> [f & cycles]
   (apply f> (m/calc-or-stack-merge f) cycles))
@@ -158,3 +159,31 @@
 
 (defn <+ [& cycles]
   (apply <c + cycles))
+
+
+(defn evts [cyc]
+  (e/events cyc true))
+
+
+(defn offset [amt cyc]
+  (e/update-events cyc (partial e/offset-slice amt)))
+
+
+(comment (evts (offset 1/3 (p/process-pattern (cyc :a :b :c))))) ;; TODO: Can ops implement cyclic?
+
+
+(defn rev [cyc]
+  (let [evts (e/events cyc false)
+        timing (map #(select-keys % e/timing-keys) evts)
+        the-rest (map #(apply dissoc % e/timing-keys) evts)]
+    (e/set-events cyc (map merge timing (reverse the-rest)))))
+
+
+(defn jux [tx cyc]
+  (s|
+   (+| cyc (pan 0))
+   (+| (tx cyc) (pan 1))))
+
+
+;; TODO: Pattern accepting time controls?
+;; note("c2, eb3 g3 [bb3 c4]").sound("piano").slow("0.5,1,1.5")

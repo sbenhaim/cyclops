@@ -241,7 +241,7 @@
 (defn hoist-merge
   [cyc]
   (if (> (count cyc) 1)
-    (ops/<+> + cyc)
+    (apply ops/+| cyc)
     (first cyc)))
 
 

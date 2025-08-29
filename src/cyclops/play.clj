@@ -2,11 +2,12 @@
   {:clj-kondo/ignore true}
   (:require
    [cyclops.pattern :as p]
-   [cyclops.events :as e]
-   [cyclops.music :as m]
+   [cyclops.events :as e :refer [events]]
+   [cyclops.music :as m :refer [chord scale]]
    [cyclops.util :refer [toggle!] :as u]
    [cyclops.core :refer [o once sh! pause!] :as c]
    [cyclops.ops :refer :all]
+   [clojure.pprint :refer [print-table]]
    [overtone.at-at :refer [now]]
    [overtone.studio.mixer :as mixer]))
 
@@ -14,8 +15,32 @@
 
 ;; (mixer/boot-server-and-mixer)
 (c/start!)
+(c/shutdown!)
 
-(once (s :bd))
+(once (n (range 60 64)) (s :superpiano))
+
+(events
+ (+| (range 10) (range 10)))
+
+(events (range 10))
+
+(events
+ (p/process-pattern (range 10)))
+
+(pause!)
+(->> (x 2 :bd :hh :sd :hh)  s once)
+
+(e/events
+ (f| Math/round
+     (n 2.5 3.2 4.1)
+     #_[(fn [_ v] (Math/round v))]))
+
+(->> [2.5 3.2 4.1] (map inc) n events)
+
+(map e/realize
+     (events
+      (n (fn [v _] (Math/floor v)))
+      true))
 
 (toggle! c/verbose)
 (toggle! c/debug-osc)
@@ -110,3 +135,8 @@
 (e/events
  (|s| (n :c) (n :e) (n :g) (s :supersaw) (s :supermandolin))
  true)
+
+
+(e/slice )
+
+(e/events [:a :b :c])

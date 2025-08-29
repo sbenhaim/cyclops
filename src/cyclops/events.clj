@@ -11,10 +11,13 @@
   (map->TimeContext {:from from :to to}))
 
 
-(defrecord Event [value start end period]
+(defrecord Event [value start length period]
   Comparable
   (compareTo [this that]
     (compare [(:start this) (:end this)] [(:start that) (:end that)])))
+
+
+(def timing-keys #{:start :end :period})
 
 
 (defn evt->tc [^Event e]
@@ -27,10 +30,14 @@
 
 (defprotocol Cyclic
   (period [this])
-  (events
-    [this]
-    [this realize?])
+  (events [this realize?])
+  (set-events [this evts])
+  (update-events [this f])
   (slice [this from to opts]))
+
+
+(defn umap-events [f cyc]
+  (update-events cyc #(map f %)))
 
 
 (defn cycle-events
@@ -57,14 +64,18 @@
   (if (fn? v)
       (case (arity v)
         0 (v)
-        (v tc))
+        1 (v tc)
+        v)
       v))
 
 
 (defn realize [^Event e]
   (let [tc (evt->tc e)
-        f (partial realize-val tc)]
-    (update-vals e f)))
+        f (partial realize-val tc)
+        timing (select-keys e timing-keys)]
+    (-> (apply dissoc e timing-keys)
+        (update-vals f)
+        (merge timing))))
 
 
 (defn -slice- [cyc from to {:keys [mode realize?] :or {mode :starts-during realize? false}}]
@@ -97,21 +108,14 @@
        slc))
 
 
-(defrecord Cycle [period events]
+(defrecord Cycle [p es]
   Cyclic
-  (period [_] period)
-  (events [this] (events this true))
-  (events [_ realize?]
-    (if realize? (map realize events) events))
+  (period [_] p)
+  (events [_ realize?] (if realize? (map realize es) es))
+  (set-events [this evts] (assoc this :es evts))
+  (update-events [this f] (update this :es f))
   (slice [this from to opts] (-slice- this from to opts)))
 
-
-(extend-type clojure.lang.Sequential
-  Cyclic
-  (period [_] 1)
-  (events [this] (events this true))
-  (events [this realize?] (if realize? (map realize this) this))
-  (slice [this from to opts] (-slice- this from to opts)))
 
 
 (defn lcp [& cycles]
@@ -121,8 +125,8 @@
 (defn normalize-periods
   [a b]
   (let [p (lcp a b)
-        a      (cycle-events (/ p (period a)) a)
-        b      (cycle-events (/ p (period b)) b)]
+        a (cycle-events (/ p (period a)) a)
+        b (cycle-events (/ p (period b)) b)]
     [(->Cycle p a) (->Cycle p b)]))
 
 

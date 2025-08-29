@@ -2,9 +2,6 @@
   (:require [cyclops.events :as e :refer [realize-val]]))
 
 
-(def unmerged #{:start :end :period})
-
-
 (defn stack-merge [a b]
   (if (coll? a)
     (conj a b)
@@ -29,30 +26,13 @@
             (f a b))))))
 
 
-#_(defn merge-with-fn
-    [f]
-    (fn mrg [b a] ;; Args are switched since clojure merge goes opposite of uzu merge
-      (fn [tc]
-        (let [a (realize-val tc a)
-              b (realize-val tc b)]
-          (cond
-
-            (fn? b) (b a tc)
-
-            (or (and (number? a) (number? b))
-                (and (number? a) (nil? b))
-                (and (nil? a) (number? b))) (f (or a 0) (or b 0))
-
-            :else [a b])))))
-
-
 
 (defn merge-left
   [with-fn]
   (fn [a b]
-    (let [remerge (select-keys a unmerged)
-          a (apply dissoc a unmerged)
-          b (apply dissoc b unmerged)]
+    (let [remerge (select-keys a e/timing-keys)
+          a (apply dissoc a e/timing-keys)
+          b (apply dissoc b e/timing-keys)]
       (-> (merge-with with-fn b a) ;; Args are switched since clojure merge goes opposite of uzu merge
           (merge remerge)))))
 
@@ -93,11 +73,16 @@
       merged)))
 
 
+(defn mg->cycle [mg]
+  (e/->Cycle (e/period mg) (e/events mg false)))
+
+
 (defrecord MergeGroup [merge-fn cycles structure-from]
   e/Cyclic
   (period [_] (apply e/lcp cycles))
-  (events [this] (e/events this true))
   (events [this realize?] (e/slice this 0 (e/period this) {:realize? realize?}))
+  (set-events [this evts] (e/set-events (mg->cycle this) evts))
+  (update-events [this f] (e/update-events (mg->cycle this) f))
   (slice [_this from to opts]
     (assert (fn? merge-fn) "First arg to `merge` op must be a fn.")
     (if (= 1 (count cycles))

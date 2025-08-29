@@ -53,7 +53,7 @@
         (range))))
 
 
-(defn cycle-chord
+(defn chord
   [sym & {:keys [o n incl] :or {incl 0
                                 o 1}}]
   (let [{:keys [midi chord]} (parse-chord sym)
@@ -66,15 +66,15 @@
 
 ;; TODO: Expose shorted form in ops?
 
-(defn scale
+(defn -scale
   [root scale-name]
   (m/scale (note root) (keyword scale-name)))
 
-(defn cycle-scale
+(defn scale
   [root scale-name & {:keys [o n incl]
                       :or {incl 0
                            o 1}}]
-  (let [notes (butlast (scale root scale-name))
+  (let [notes (butlast (-scale root scale-name))
         cyc   (cycle+12 notes)]
     (cond
       n (take n cyc)
@@ -82,4 +82,4 @@
       :else cyc)))
 
 
-(comment (cycle-scale :c :minor :o 2))
+(comment (scale :c :minor :o 2))
