@@ -1,31 +1,8 @@
-
-
-
-(defn compart
-  "Combo comp and partial. Given `f` fn of arity 1, if `f-or-v` is a fn, compposes `f` and `f-or-v` into
-  a fn of the same arity as `f-or-v` (unlike standard `comp` which returns variadic fn).
-  If `f-or-v` is a val, returns a `fn` of no args representing the partial application of
-  `f-or-v` to `f`.
-
-  Effectively provides flexible way to defer exection of `f`."
-  [f f-or-v]
-  (if (fn? f-or-v) (cmp f f-or-v) (p f f-or-v)))
-
-
-(defn realize
-  [f-or-v]
-  (if (fn? f-or-v) (f-or-v) f-or-v))
-
-
-(defn realize-chain [[f & fs]]
-  (reduce #(%2 %1) (realize f) fs))
-
-
-(realize-chain
- (conj [(fn [] 1)] inc #(* 2 %)))
+(ns cyclops.pattern
+  (:require
    [cyclops.events :as e]
    [cyclops.music :as m]
-   [cyclops.util :refer [rot cycle-n cmp p]]
+   [cyclops.util :refer [rot cycle-n] :as u]
    [clojure.string :as s]))
 
 ;; Ops
@@ -55,10 +32,9 @@
 
 (defn process-pattern
   [pat]
-  (-> (operate pat base-context)
+  (-> pat
+      (operate base-context)
       e/collapse-events))
-
-(comment (process-pattern [:a :b :c]))
 
 
 (defn apply-timing
@@ -80,9 +56,9 @@
                        (if (op? child)
                          (operate child ctx) ;; If child is an op, apply with inherited context
                          ;; Otherwise, add timing information to the event. Event keys can override (e.g., `length`).
-                         (e/->Event child
+                         (e/->event child
                                     start
-                                    (+ start length)
+                                    length
                                     period))))))))
 
 
@@ -254,43 +230,14 @@
 
 ;; Controls
 
-(defn apply-tx
-  [tx v]
-  (if (fn? v)
-    (cmp tx v)
-    (tx v)))
-
-
-(defrecord Control [cycle key value-tx]
-  e/Cyclic
-  (period [_] (e/period cycle))
-  (events [this realize?] (e/slice this 0 (e/period this) {:realize? realize?}))
-  (set-events [_ evts] (e/set-events cycle evts))
-  (update-events [_ f] (e/update-events cycle f))
-  (slice [_ from to opts]
-    (let [evts (e/slice cycle from to opts)]
-      (map (fn [e]
-             (-> e
-                 (assoc key (apply-tx value-tx (:value e)))
-                 (dissoc :value)))
-           evts))))
-
-
-(defmacro defcontrol
-    {:clj-kondo/lint-as :clojure.core/defn :clj-kondo/ignore true}
-    ([control doc value-tx]
-     `(defcontrol ~control ~doc ~(keyword control) ~value-tx))
-    ([control doc param value-tx]
-     `(do
-        (defn ~control ~doc [pat#]
-          (->Control (pat/process-pattern pat#) ~param ~value-tx))
-        (defn ~(symbol (str control "*")) ~doc [& pat#]
-          (~control pat#)))))
-
-
-(defn ->control
+(defn ->control ;; TODO: way to dedup controls?
   [param value-tx pat]
-  (->Control (process-pattern pat) param value-tx))
+  (let [cyc
+        (->> pat
+             process-pattern
+             (e/map-events
+              #(-> % (e/reassoc-param :init param))))]
+    (e/q-param-xf cyc param value-tx)))
 
 
 (defn rest? [v]
@@ -299,17 +246,23 @@
 
 (defn parse-num
   [n]
-  (cond
-    (rest? n)    nil
-    (keyword? n) (m/note n)
-    (string? n)  (m/note n)
-    (number? n)  (float n)
-    :else        n))
+  (if (coll? n) (mapv parse-num n)
+      (cond
+        (rest? n)    nil
+        (keyword? n) (m/note n)
+        (string? n)  (m/note n)
+        (number? n)  (float n)
+        :else        n)))
+
+
+(comment
+ (parse-num [:a :b]))
 
 
 (defn parse-sound
   [s]
-  (cond
-    (rest? s)    nil
-    (keyword? s) (name s)
-    :else        s))
+  (if (coll? s) (mapv parse-sound s)
+      (cond
+        (rest? s)    nil
+        (keyword? s) (name s)
+        :else        s)))

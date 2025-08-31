@@ -8,8 +8,7 @@
    [cyclops.core :refer [o once sh! pause!] :as c]
    [cyclops.ops :refer :all]
    [clojure.pprint :refer [print-table]]
-   [overtone.at-at :refer [now]]
-   [overtone.studio.mixer :as mixer]))
+   [overtone.at-at :refer [now]]))
 
 
 
@@ -22,10 +21,6 @@
 (events
  (+| (range 10) (range 10)))
 
-(events (range 10))
-
-(events
- (p/process-pattern (range 10)))
 
 (pause!)
 (->> (x 2 :bd :hh :sd :hh)  s once)
@@ -139,4 +134,8 @@
 
 (e/slice )
 
-(e/events [:a :b :c])
+(once (->> (n (chord :cm7 :o 3 :incl 1)) (juxt rev)) (s :supermandolin))
+
+(once (+| (n :c2 :eb3 :g3 [:bb3 :c4])) (s :superpiano))
+
+(slow 0.5)

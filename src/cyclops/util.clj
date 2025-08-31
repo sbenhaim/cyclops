@@ -87,3 +87,40 @@
     1 #(f1 (f2 %))
     2 #(f1 (f2 %1 %2))
     (comp f1 f2)))
+
+
+(defn ensure-vec [v]
+  (if (coll? v) (into [] v)
+    [v]))
+
+
+(defn vector*
+  "Throw stuff at it and always get a flat vector back."
+  [& stuff]
+  (->> stuff vec flatten (into [])))
+
+
+(comment
+  (vector* :a)
+  (vector* :a [:b] '(:c :d [:e :f])))
+
+(defn num-enough? [& ns?]
+  (every? (some-fn number? nil?) ns?))
+
+
+(defn reassoc
+  ([m from to] (reassoc m from to identity))
+  ([m from to f]
+   (-> m (assoc to (f (from m))) (dissoc from))))
+
+(defn reassoc?
+  ([m from to] (reassoc? m from to identity))
+  ([m from to f]
+   (if (contains? m from)
+     (reassoc m from to f)
+     m)))
+
+
+
+(defn reduce-apply [v xfs]
+  (reduce (fn [v xf] (xf v)) v xfs))

@@ -1,15 +1,20 @@
 (ns cyclops.ops
   (:require
    [cyclops.pattern :as p]
-   [cyclops.util :refer [smart-splat p]]
+   [cyclops.util :refer [smart-splat]]
    [cyclops.merge :as m]
    [cyclops.events :as e]))
+
+
+(defn evts [cyc]
+  (e/realize cyc))
 
 
 (defn x
   "Repeats pattern `n` times, squeezing into single segment."
   [n & children]
   (p/->TimesOp n (smart-splat children)))
+
 
 ;; Splicing Ops
 
@@ -85,6 +90,8 @@
   (p/->control :n p/parse-num (smart-splat pat)))
 
 
+(comment (-> (n :a) evts))
+
 
 (defn pan
   "Left 0.0, Right 1.0"
@@ -122,61 +129,132 @@
   (p/->control :legato float (smart-splat pat)))
 
 
+(defn rev ;; TODO: Currently unexpectedly recursive
+  "Reverse pat"
+  [& pat]
+  (let [cycl (p/process-pattern (smart-splat pat))]
+    (e/q-cycle-xf cycl (fn [evts]
+                         (->> evts
+                              (map (fn [e] (update e :start #(- (e/period cycl) %))))
+                              (sort e/event-sort))))))
+
+
+(comment (evts (rev :a [:b :c])))
+
+
+
 (defn f| [f & cycles]
-  (m/->mg f (smart-splat cycles) :both))
+  (m/merge-cycles f (smart-splat cycles)))
+
+
+(comment
+  (->
+   (f| (m/apply|fn-merge #(u/vector* (:prev %) (:cur %)))
+       (n :a)
+       (n :b))
+   evts)
+
+  (->
+   (f| m/apply|left-merge
+       (n :a)
+       (n :b))
+   evts)
+
+  (->
+   (f| m/stack-merge
+       (n 1)
+       (n inc))
+   evts)
+
+  (->
+   (f| m/apply|stack-merge
+       (n :a)
+       (n #(inc (:prev %)))
+       (n :b))
+   evts)
+
+  (->
+   (f| m/apply|stack-merge
+       (n 1)
+       (n #(inc 2)))
+   evts)
+
+
+  (->
+   (f| m/apply|stack-merge
+       (n 1)
+       (s :b))
+   evts)
+
+
+  (->
+   (f| (m/apply|maths|stack-merge +)
+       (s 1)
+       (s #(inc (:prev %)))
+       (s #(rand-int 10)))
+   evts)
+
+
+  ,)
 
 
 (defn f> [f & cycles]
-  (m/->mg f (smart-splat cycles) :left))
+  (m/merge-cycles f (smart-splat cycles) :left))
 
 
 (defn <f [f & cycles]
-  (m/->mg f (reverse (smart-splat cycles)) :left))
+  (m/merge-cycles f (reverse (smart-splat cycles)) :left))
 
 
 (defn s| [& cycles]
-  (apply f| m/stack-merge cycles))
+  (apply f| m/apply|stack-merge cycles))
 
 
-(defn c| [f & cycles]
-  (apply f| (m/calc-or-stack-merge f) cycles))
+(comment
+  (->
+   (s| (n :a)
+       (n #(rand-nth [:b :c :d])))
+   evts)
 
-(defn c> [f & cycles]
-  (apply f> (m/calc-or-stack-merge f) cycles))
+  (->
+   (s| (n 1)
+       (n #(inc (:prev %)))
+       (n 2))
+   evts))
 
 
-(defn <c [f & cycles]
-  (apply <f (m/calc-or-stack-merge f) cycles))
+(defn m| [f & cycles]
+  (apply f| (m/apply|maths|stack-merge f) cycles))
+
+
+(comment
+  (-> (m| + (n 1) (n 2)) evts)
+  (-> (m| + (n #(rand-int 10)) (n 2)) evts)
+  (-> (m| + (n #(rand-int 10)) (n #(inc (/ (:prev %) 2)))) evts)
+  (-> (m| + (n :a) (n 4)) evts)
+  (-> (m| + (s :a) (s :b)) evts)
+  (-> (m| + (n :a) (s :b)) evts)
+  ,)
+
+
+(defn m> [f & cycles]
+  (apply f> (m/apply|maths|stack-merge f) cycles))
+
+
+(defn <m [f & cycles]
+  (apply <f (m/apply|maths|stack-merge f) cycles))
 
 
 (defn +| [& cycles]
-  (apply c| + cycles))
+  (apply m| + cycles))
 
 
 (defn +> [& cycles]
-  (apply c> + cycles))
+  (apply m> + cycles))
 
 
 (defn <+ [& cycles]
-  (apply <c + cycles))
-
-
-(defn evts [cyc]
-  (e/events cyc true))
-
-
-(defn offset [amt cyc]
-  (e/update-events cyc (partial e/offset-slice amt)))
-
-
-(comment (evts (offset 1/3 (p/process-pattern (cyc :a :b :c))))) ;; TODO: Can ops implement cyclic?
-
-
-(defn rev [cyc]
-  (let [evts (e/events cyc false)
-        timing (map #(select-keys % e/timing-keys) evts)
-        the-rest (map #(apply dissoc % e/timing-keys) evts)]
-    (e/set-events cyc (map merge timing (reverse the-rest)))))
+  (apply <m + cycles))
 
 
 (defn jux [tx cyc]
@@ -187,3 +265,34 @@
 
 ;; TODO: Pattern accepting time controls?
 ;; note("c2, eb3 g3 [bb3 c4]").sound("piano").slow("0.5,1,1.5")
+
+
+
+(defn sin
+  ([] (sin 0 1 1))
+  ([max] (sin 0 max 1))
+  ([min max] (sin min max 1))
+  ([min max period]
+   (fn [{:keys [event]}]
+     (let [TAU  (* 2 Math/PI)
+           mult (-> max (- min) (/ 2))
+           base (-> (:start event) (* TAU) (/ period) Math/sin (+ 1) (* mult))
+           n    (+ base min)]
+       n))))
+
+
+(defn rand
+  ([] (rand 0 1))
+  ([max] (rand 0 max))
+  ([min max]
+   (fn []
+     (let [cap (- max min)]
+       (+ (clojure.core/rand cap) min)))))
+
+
+(defn irand
+  ([max] (irand 0 max))
+  ([min max]
+   (fn []
+     (let [cap (- max min)]
+       (+ (rand-int cap) min)))))

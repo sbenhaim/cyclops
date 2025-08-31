@@ -1,43 +1,88 @@
 (ns cyclops.events
   (:require
    [clojure.math.numeric-tower :refer [lcm]]
-   [cyclops.util :refer [arity]]))
+   [cyclops.util :refer [arity ensure-vec]]))
 
 
-(defrecord TimeContext [from to])
+(defn event-sort [a b]
+  (compare [(:start a) (:length a)] [(:start b) (:length b)]))
 
 
-(defn tc [from to]
-  (map->TimeContext {:from from :to to}))
-
-
-(defrecord Event [value start length period]
+(defrecord Event [params start length period]
   Comparable
   (compareTo [this that]
-    (compare [(:start this) (:end this)] [(:start that) (:end that)])))
+    (event-sort this that)))
 
 
-(def timing-keys #{:start :end :period})
+(defn ->event [init start length period]
+  (->Event {:init init} start length period))
 
 
-(defn evt->tc [^Event e]
-  (tc (:start e) (:end e)))
+(defn update-param
+  [e k f & vs]
+  (apply update-in e [:params k] f vs))
 
 
-(defn length [^Event e]
-  (- (:end e) (:start e)))
+(defn reassoc-param
+  ([e from to] (reassoc-param e from to identity))
+  ([e from to f]
+   (-> e
+       (assoc-in [:params to] (f (get-in e [:params from])))
+       (update :params #(dissoc % from)))))
+
+
+(defn qxf
+  ([v xf]
+   (conj (ensure-vec v) xf))
+  ([e param xf]
+   (update-param e param #(qxf % xf))))
+
+
+(defn end [^Event e]
+  (+ (:start e) (:length e)))
 
 
 (defprotocol Cyclic
   (period [this])
-  (events [this realize?])
-  (set-events [this evts])
-  (update-events [this f])
-  (slice [this from to opts]))
+  (events [this])
+  (cycle-xfs [this])
+  (event-xfs [this])
+  (param-xfs [this]))
 
 
-(defn umap-events [f cyc]
-  (update-events cyc #(map f %)))
+(defrecord Cycle [period events cycle-xfs event-xfs param-xfs]
+  Cyclic
+  (period [_] period)
+  (events [_] events)
+  (cycle-xfs [_] cycle-xfs)
+  (event-xfs [_] event-xfs)
+  (param-xfs [_] param-xfs))
+
+
+(defn ->cycle [period evts]
+  (->Cycle period evts [] [] {}))
+
+
+(defn q-cycle-xf
+  [cyc xf]
+  (update cyc :cycle-xfs #(conj % xf)))
+
+
+(defn q-param-xf
+  [cyc param xf]
+  (update-in cyc [:param-xfs param] #(conj (or % []) xf)))
+
+
+(defn map-events
+  [f cyc]
+  (update cyc :events #(map f %)))
+
+
+(defn map-params
+  [param f cyc]
+  (map-events #(update-in % [:param param] f) cyc))
+
+
 
 
 (defn cycle-events
@@ -45,77 +90,81 @@
   ([cyc] (cycle-events nil cyc))
   ([n cyc]
    (let [period (period cyc)
-         evts (events cyc false)
-         cycle (->> evts
-                    repeat
-                    (mapcat
-                     (fn [i cycle]
-                       (for [e cycle]
-                         (-> e
-                             (update :start #(+ % (* i period)))
-                             (update :end #(+ % (* i period))))))
-                     (range)))]
+         evts (events cyc)
+         cycle  (->> evts
+                     repeat
+                     (mapcat
+                      (fn [i cyc]
+                        (map (fn [e] (update e :start #(+ % (* i period)))) cyc))
+                      (range)))]
      (if n
        (take (* n (count evts)) cycle)
        cycle))))
 
 
-(defn realize-val [tc v]
-  (if (fn? v)
-      (case (arity v)
-        0 (v)
-        1 (v tc)
-        v)
-      v))
+(defn realize-val
+  [v ctx]
+  (let [param-xfs (get-in ctx [:cycle :param-xfs (:param ctx)] [])
+        realized  (cond
+                    (coll? v) (reduce (fn [prev cur] (realize-val cur (assoc ctx :prev prev)))
+                                      (realize-val (first v) ctx) (rest v))
+                    (fn? v)   (if (zero? (arity v))
+                                (v)
+                                (v ctx))
+                    :else     v)]
+    (u/reduce-apply realized param-xfs)))
 
 
-(defn realize [^Event e]
-  (let [tc (evt->tc e)
-        f (partial realize-val tc)
-        timing (select-keys e timing-keys)]
-    (-> (apply dissoc e timing-keys)
-        (update-vals f)
-        (merge timing))))
+(defn realize-event
+  ([^Event e] (realize-event e {}))
+  ([^Event e ctx]
+   (let [base     (select-keys e #{:start :length})
+         params   (:params e)
+         ctx      (assoc ctx :event e)
+         realized (into {} (for [[k v] params] [k (realize-val v (assoc ctx :param k))]))]
+     (merge base realized))))
 
 
-(defn -slice- [cyc from to {:keys [mode realize?] :or {mode :starts-during realize? false}}]
+(defn realize-events [ctx events]
+  (map #(realize-event % ctx) events))
+
+
+(defn realize
+  "Realizes Cycle into slice of events.
+  ;; TODO: Slice + realize should be transducer thing"
+  ([cyc] (realize cyc {}))
+  ([cyc ctx]
+   (let [ctx (assoc ctx :cycle cyc)
+         evts (->> cyc
+                   events
+                   (map #(realize-event % ctx)))]
+     (-> evts
+         (u/reduce-apply (event-xfs cyc))
+         (u/reduce-apply (cycle-xfs cyc))))))
+
+
+(defn slice [cyc from length {:keys [mode] :or {mode :starts-during}}]
   (assert (#{:starts-during :ends-during :active-during} mode))
-  (let [evts (events cyc false)
-        p    (period cyc)]
-    (if (and (zero? from) (= to p)) (if realize? (map realize evts) evts)
-        (let [to                (if (<= to from) (+ to p) to)
-              loop              (if (> to p) (cycle-events cyc) evts)
-              [key1 key2 compr] (case mode
-                                  :starts-during [:start :start >]
-                                  :ends-during   [:end :end >]
-                                  :active-during [:end :start >=])
-              slc               (into []
-                                      (comp
-                                       (drop-while #(compr from (key1 %)))
-                                       (take-while #(> to (key2 %))))
-                                      loop)]
-          (if realize?
-            (map realize slc)
-            slc)))))
+  (let [p             (period cyc)
+        evts         (events cyc)
+        to            (+ from length)
+        to            (if (<= to from) (+ to p) to)
+        loop          (if (> to p) (cycle-events evts) evts)
+        [drop? take?] (case mode
+                        :starts-during [#(> from (:start %)) #(> to (:start %))]
+                        :ends-during   [#(> from (end %)) #(> to (end %))]
+                        :active-during [#(>= from (end %)) #(> to (:start %))])
+        slc           (into []
+                            (comp
+                             (drop-while drop?)
+                             (take-while take?))
+                            loop)]
+    slc))
 
 
 
-(defn offset-slice [amount slc]
-  (map (fn [e]
-         (-> e
-             (update :start #(+ % amount))
-             (update :end #(+ % amount))))
-       slc))
-
-
-(defrecord Cycle [p es]
-  Cyclic
-  (period [_] p)
-  (events [_ realize?] (if realize? (map realize es) es))
-  (set-events [this evts] (assoc this :es evts))
-  (update-events [this f] (update this :es f))
-  (slice [this from to opts] (-slice- this from to opts)))
-
+(defn offset [amount slc]
+  (map #(update % :start (partial + amount)) slc))
 
 
 (defn lcp [& cycles]
@@ -127,14 +176,13 @@
   (let [p (lcp a b)
         a (cycle-events (/ p (period a)) a)
         b (cycle-events (/ p (period b)) b)]
-    [(->Cycle p a) (->Cycle p b)]))
+    [(->cycle p a) (->cycle p b)]))
 
 
 (defn sync-periods
   [a b]
   (let [[a b] (normalize-periods a b)]
-    (->Cycle (period a) (concat (events a false) (events b false)))))
-
+    (->cycle (period a) (concat (events a) (events b)))))
 
 
 (defn collapse-events
@@ -143,44 +191,11 @@
   Returns a tuple of `[period evts]`.
 
   Note: Does not currently update :period values in the events themselves."
-
-
   [evts]
   (if-not (seq evts)
     []
     (->> evts
          flatten
          (group-by :period)
-         (map #(apply ->Cycle %))
+         (map #(apply ->cycle %))
          (reduce sync-periods))))
-
-
-
-(defn sin
-  ([] (sin 0 1 1))
-  ([max] (sin 0 max 1))
-  ([min max] (sin min max 1))
-  ([min max period]
-   (fn [^TimeContext {:keys [from]}]
-     (let [TAU  (* 2 Math/PI)
-           mult (-> max (- min) (/ 2))
-           base (-> from (* TAU) (/ period) Math/sin (+ 1) (* mult))
-           n    (+ base min)]
-       n))))
-
-
-(defn rand
-  ([] (rand 0 1))
-  ([max] (rand 0 max))
-  ([min max]
-   (fn []
-     (let [cap (- max min)]
-       (+ (clojure.core/rand cap) min)))))
-
-
-(defn irand
-  ([max] (irand 0 max))
-  ([min max]
-   (fn []
-     (let [cap (- max min)]
-       (+ (rand-int cap) min)))))
