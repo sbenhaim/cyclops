@@ -1,7 +1,7 @@
 (ns cyclops.ops
   (:require
    [cyclops.pattern :as p]
-   [cyclops.util :refer [smart-splat]]
+   [cyclops.util :as u :refer [smart-splat collate]]
    [cyclops.merge :as m]
    [cyclops.events :as e]))
 
@@ -96,7 +96,7 @@
 (defn pan
   "Left 0.0, Right 1.0"
   [& pat]
-  (p/->control :pan float (smart-splat pat)))
+  (p/->control :pan (collate float) (smart-splat pat)))
 
 
 (defn vowel

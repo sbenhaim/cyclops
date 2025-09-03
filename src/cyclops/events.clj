@@ -46,26 +46,29 @@
   (period [this])
   (events [this])
   (cycle-xfs [this])
-  (event-xfs [this])
   (param-xfs [this]))
 
 
-(defrecord Cycle [period events cycle-xfs event-xfs param-xfs]
+(defrecord Cycle [period events cycle-xfs param-xfs]
   Cyclic
   (period [_] period)
   (events [_] events)
   (cycle-xfs [_] cycle-xfs)
-  (event-xfs [_] event-xfs)
   (param-xfs [_] param-xfs))
 
 
 (defn ->cycle [period evts]
-  (->Cycle period evts [] [] {}))
+  (->Cycle period evts [] {}))
 
 
 (defn q-cycle-xf
   [cyc xf]
   (update cyc :cycle-xfs #(conj % xf)))
+
+
+(defn q-event-xf
+  [cycl exf]
+  (update cycl :cycle-xfs (fn [xfs] (conj xfs #(map exf (events %))))))
 
 
 (defn q-param-xf
@@ -138,9 +141,7 @@
          evts (->> cyc
                    events
                    (map #(realize-event % ctx)))]
-     (-> evts
-         (u/reduce-apply (event-xfs cyc))
-         (u/reduce-apply (cycle-xfs cyc))))))
+     (u/reduce-apply evts (cycle-xfs cyc)))))
 
 
 (defn slice [cyc from length {:keys [mode] :or {mode :starts-during}}]

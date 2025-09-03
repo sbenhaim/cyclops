@@ -121,6 +121,13 @@
      m)))
 
 
-
 (defn reduce-apply [v xfs]
   (reduce (fn [v xf] (xf v)) v xfs))
+
+
+(defn collate [f]
+  (fn [v]
+    (cond
+      (vector? v) (mapv f v)
+      (sequential? v) (map f v)
+      :else (f v))))
