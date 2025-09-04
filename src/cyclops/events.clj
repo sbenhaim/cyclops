@@ -1,7 +1,7 @@
 (ns cyclops.events
   (:require
    [clojure.math.numeric-tower :refer [lcm]]
-   [cyclops.util :refer [arity ensure-vec]]))
+   [cyclops.util :as u :refer [arity ensure-vec]]))
 
 
 (defn event-sort [a b]
