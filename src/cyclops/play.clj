@@ -11,12 +11,73 @@
    [overtone.at-at :refer [now]]))
 
 
+;; TODO: Is there an elegant way to apply pattern fns (slow/x) to a cycle?
+;; TODO: How to accept patterns as arguments to pattern fns?
+;; (slow [1 2 3] [:a :b :c]) == [(slow 1 :a) (slow 2 :b) (slow 3 :c)]
+;; (slow [1 2 [3 4]] (n :a :b :c))
+;; We'll need to see how tidal/strudel do it. Is this even something to support?
+;; Can pattern implement cyclic? Can cycles be events? Would they just need to implement realize-event?
+;; Realize could be polymorphic and call realize-event on events and realize-cycle on cycles, maybe.
+;; But a cycle has timing info which would need to adapt to event context.
+;; Though we do have events sending in context. Maybe it's just more offsets?
+
+(comment ;api
+  (o 1 :a :b :c) ; Not this
+  ; or
+  (o 1 (n :a :b :c) (s :supersaw))
+  (->> [:a :b :c] n (o 1 (s :supersaw)))
+
+  (o 1 (n (sin 50 100 3)) (s :supersaw))
+
+  (o 1 (s :bd :sd :sd) (x [3 2 3])) ; => "bd!3 sd!2 sd!3" => ctrl + single arg representing params is a partial
+
+  ; or we just use threading
+  (o 1 (->> (s :bd :sd :sd) (x [3 2 3])))  (->> [:bd :sd :sd] s (x [3 2 3]) (o 1))
+  ; NOTE: This one
+
+  ; Do I support
+  (+| [1 2 3] [4 5 6]) ; <= Requires either that seqs/patterns implement Cyclic or
+                                        ; that merge be polymorphic and support patterns
+                                        ; or that we use pattern specific merge conditionals (probably a bad idea)
+                                        ; or that we somehow convert patterns to cycles somewhere
+                                        ; Maybe not crazy that patterns can become cycles?
+                                        ; Advantage: Create a general pattern and then assign it to a ctrl
+                                        ; Stretch goal
+
+  (+| (n 1 2 3) [4 5 6]) ; <= easy to type, requires some hidden assumptions,
+  ; like that unassigned values merge with any or certain or the first existing
+  ; param? Frankly don't like it
+  ; => #Event{:n 1 :init 4}
+
+  ; or require
+  (+| (n 1 2 3) (n 4 5 6)) ; <= simple and clear and easier to implement
+  ; This one plus stretch goal
+  )
 
 ;; (mixer/boot-server-and-mixer)
 (c/start!)
 (c/shutdown!)
 
 (once (n (range 60 64)) (s :superpiano))
+
+(once
+ (s|
+  (+| (s :superpiano) (n (range 60 64)) (pan 0))
+  (+| (s :superpiano) (rev-cycl (n (range 60 64))) (pan 1))))
+
+
+(evts
+ (n (->> [1 2 3] (slow 2))))
+
+
+(evts
+ (rev (s :superpiano)))
+
+evts
+(+| (s :superpiano) (n (range 60 64)) (pan 1))
+
+(evts
+ (s| (+| (n 10) (s :supermandolin) (pan 0)) (+| (n 20) (s :superpiano) (pan 1))))
 
 (events
  (+| (range 10) (range 10)))

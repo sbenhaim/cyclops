@@ -44,3 +44,24 @@
 
 
 (splice-update-if vector? rest [:fit [:cycle :a :b] :c :d])
+
+
+(ns-unmap *ns* 'scratch)
+(defmulti scratch type)
+
+(defmethod scratch :default
+  [x] (type x))
+
+
+(defmethod scratch cyclops.events.Cyclic
+  [x] 'Cyclic)
+
+
+(defmethod scratch clojure.lang.Sequential
+  [x] "seq")
+
+(defmethod scratch clojure.lang.IPersistentVector
+  [x] "vec")
+
+(defmethod scratch clojure.lang.PersistentVector
+  [x] "vector")

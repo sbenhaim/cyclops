@@ -1,17 +1,63 @@
 (ns cyclops.events
   (:require
    [clojure.math.numeric-tower :refer [lcm]]
-   [cyclops.util :as u :refer [arity ensure-vec]]))
+   [cyclops.util :as u :refer [arity p2]]))
 
 
-(defn event-sort [a b]
-  (compare [(:start a) (:length a)] [(:start b) (:length b)]))
+(defprotocol DoYouRealize?
+  (realize [this ctx]))
+
+
+(extend-protocol DoYouRealize?
+
+  java.lang.Object
+  (realize [this _ctx] this)
+
+  clojure.lang.IFn
+  (realize [this ctx]
+    (case (arity this)
+      0 (this)
+      1 (this ctx)
+      this)) ; Or (defer this ctx)?
+
+  clojure.lang.ISeq
+  (realize [this ctx] (map (p2 realize ctx) this)))
+
+
+#_(defn realize-val
+    [v ctx]
+    (let [param-xfs (get-in ctx [:cycle :param-xfs (:param ctx)] []) ;; TODO: Way to do this at cycle level more cleanly?
+          realized  (if (fn? v)
+                      (case (arity v)
+                        0 (v)
+                        1 (v ctx))
+                      v)]
+      (u/reduce-apply realized param-xfs)))
+
+;; NOTE: Param xfs have to happen after val realization but before merge apply|fn.
+;; Should they happen in merge? Is this already ideal?
 
 
 (defrecord Event [params start length period]
   Comparable
   (compareTo [this that]
-    (event-sort this that)))
+    (compare [(:start this) (:length this)] [(:start that) (:length that)]))
+  DoYouRealize?
+  (realize [this ctx]
+    (let [base     (select-keys this #{:start :length})
+          ctx      (assoc ctx :event this)
+          realized (into {} (for [[k v] params] [k (realize v (assoc ctx :param k))]))]
+      (merge base realized))))
+
+
+(defn event? [event?]
+  (instance? Event event?))
+
+
+(defn defer+realize
+  [f & args]
+  (fn [ctx]
+    (apply f (map (p2 realize ctx) args))))
 
 
 (defn ->event [init start length period]
@@ -31,11 +77,9 @@
        (update :params #(dissoc % from)))))
 
 
-(defn qxf
-  ([v xf]
-   (conj (ensure-vec v) xf))
-  ([e param xf]
-   (update-param e param #(qxf % xf))))
+(defn dissoc-param
+  [e param]
+  (update e :params #(dissoc % param)))
 
 
 (defn end [^Event e]
@@ -44,17 +88,31 @@
 
 (defprotocol Cyclic
   (period [this])
-  (events [this])
-  (cycle-xfs [this])
-  (param-xfs [this]))
+  (events [this]))
+
+
+(extend-type cyclops.events.Cyclic
+  DoYouRealize?
+  (realize [this ctx]
+    (realize (events this) ctx)))
 
 
 (defrecord Cycle [period events cycle-xfs param-xfs]
   Cyclic
   (period [_] period)
   (events [_] events)
-  (cycle-xfs [_] cycle-xfs)
-  (param-xfs [_] param-xfs))
+  DoYouRealize?
+  (realize [this ctx]
+    (let [ctx (assoc ctx :cycle this)
+          evts (map #(realize % ctx) events)]
+      (u/reduce-apply evts cycle-xfs))))
+
+
+(defn cycle-xfs [^Cycle cycl] (:cycle-xfs cycl))
+
+
+;; TODO: Eliminate?
+(defn param-xfs [^Cycle cycl] (:param-xfs cycl))
 
 
 (defn ->cycle [period evts]
@@ -62,8 +120,8 @@
 
 
 (defn q-cycle-xf
-  [cyc xf]
-  (update cyc :cycle-xfs #(conj % xf)))
+  [cycl xf]
+  (update cycl :cycle-xfs #(conj % xf)))
 
 
 (defn q-event-xf
@@ -72,82 +130,41 @@
 
 
 (defn q-param-xf
-  [cyc param xf]
-  (update-in cyc [:param-xfs param] #(conj (or % []) xf)))
+  [cycl param xf]
+  (update-in cycl [:param-xfs param] #(conj (or % []) xf)))
 
 
 (defn map-events
-  [f cyc]
-  (update cyc :events #(map f %)))
+  [f cycl]
+  (update cycl :events #(map f %)))
 
 
 (defn map-params
-  [param f cyc]
-  (map-events #(update-in % [:param param] f) cyc))
-
-
+  [param f cycl]
+  (map-events #(update-in % [:param param] f) cycl))
 
 
 (defn cycle-events
   "Like clojure.core/cycle but, moves events cyclically forward in time as it cycles"
-  ([cyc] (cycle-events nil cyc))
-  ([n cyc]
-   (let [period (period cyc)
-         evts (events cyc)
+  ([cycl] (cycle-events nil cycl))
+  ([n cycl]
+   (let [period (period cycl)
+         evts (events cycl)
          cycle  (->> evts
                      repeat
                      (mapcat
-                      (fn [i cyc]
-                        (map (fn [e] (update e :start #(+ % (* i period)))) cyc))
+                      (fn [i cycl]
+                        (map (fn [e] (update e :start #(+ % (* i period)))) cycl))
                       (range)))]
      (if n
        (take (* n (count evts)) cycle)
        cycle))))
 
 
-(defn realize-val
-  [v ctx]
-  (let [param-xfs (get-in ctx [:cycle :param-xfs (:param ctx)] [])
-        realized  (cond
-                    (coll? v) (reduce (fn [prev cur] (realize-val cur (assoc ctx :prev prev)))
-                                      (realize-val (first v) ctx) (rest v))
-                    (fn? v)   (if (zero? (arity v))
-                                (v)
-                                (v ctx))
-                    :else     v)]
-    (u/reduce-apply realized param-xfs)))
-
-
-(defn realize-event
-  ([^Event e] (realize-event e {}))
-  ([^Event e ctx]
-   (let [base     (select-keys e #{:start :length})
-         params   (:params e)
-         ctx      (assoc ctx :event e)
-         realized (into {} (for [[k v] params] [k (realize-val v (assoc ctx :param k))]))]
-     (merge base realized))))
-
-
-(defn realize-events [ctx events]
-  (map #(realize-event % ctx) events))
-
-
-(defn realize
-  "Realizes Cycle into slice of events.
-  ;; TODO: Slice + realize should be transducer thing"
-  ([cyc] (realize cyc {}))
-  ([cyc ctx]
-   (let [ctx (assoc ctx :cycle cyc)
-         evts (->> cyc
-                   events
-                   (map #(realize-event % ctx)))]
-     (u/reduce-apply evts (cycle-xfs cyc)))))
-
-
-(defn slice [cyc from length {:keys [mode] :or {mode :starts-during}}]
+(defn slice [cycl from length {:keys [mode] :or {mode :starts-during}}]
   (assert (#{:starts-during :ends-during :active-during} mode))
-  (let [p             (period cyc)
-        evts         (events cyc)
+  (let [p             (period cycl)
+        evts          (events cycl)
         to            (+ from length)
         to            (if (<= to from) (+ to p) to)
         loop          (if (> to p) (cycle-events evts) evts)

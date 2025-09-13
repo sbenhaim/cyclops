@@ -252,4 +252,4 @@
 
 
 (defn once [& cyc]
-  (throw-dirt (e/events (hoist-merge cyc) true)))
+  (throw-dirt (ops/evts (hoist-merge cyc))))

@@ -37,6 +37,7 @@
 - [x] Live cps changes
 - [x] Mini notation macro/data
 - [x] Data notation
+- [ ] Namespace our ctrl params
 - [ ] Make OSC send pluggable
 - [ ] Docs and examples
 - [ ] Videos
@@ -59,4 +60,5 @@
     - [ ] Processing
     - [ ] Quil
 - [ ] Separate dirt add midi/osc
+- [ ] Optimize recursion
       

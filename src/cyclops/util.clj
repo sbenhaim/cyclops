@@ -46,6 +46,18 @@
 (comment (arity (partial inc 1)))
 
 
+(defn fn0? [f?]
+  (zero? (arity f?)))
+
+
+(defn fn1? [f?]
+  (= 1 (arity f?)))
+
+
+(defn fn2? [f?]
+  (= 2 (arity f?)))
+
+
 (defn divisable? [n divisor]
   (zero? (mod n divisor)))
 
@@ -79,6 +91,11 @@
     (partial f a)))
 
 
+(defn p2
+  [f a]
+  #((p f %) a))
+
+
 (defn cmp
   "Compose, but only accepts 2 fns and works with the `arity` fn for arities up to 2."
   [f1 f2]
@@ -87,6 +104,13 @@
     1 #(f1 (f2 %))
     2 #(f1 (f2 %1 %2))
     (comp f1 f2)))
+
+
+(defn defer
+  [f arg-or-fn]
+  (if (fn? arg-or-fn)
+    (cmp f arg-or-fn)
+    (p f arg-or-fn)))
 
 
 (defn ensure-vec [v]
@@ -104,6 +128,7 @@
   (vector* :a)
   (vector* :a [:b] '(:c :d [:e :f])))
 
+
 (defn num-enough? [& ns?]
   (every? (some-fn number? nil?) ns?))
 
@@ -112,6 +137,7 @@
   ([m from to] (reassoc m from to identity))
   ([m from to f]
    (-> m (assoc to (f (from m))) (dissoc from))))
+
 
 (defn reassoc?
   ([m from to] (reassoc? m from to identity))

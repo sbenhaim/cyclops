@@ -2,15 +2,10 @@
   (:require
    [cyclops.events :as e]
    [cyclops.music :as m]
-   [cyclops.util :refer [rot cycle-n] :as u]
-   [clojure.string :as s]))
+   [cyclops.util :as u :refer [cycle-n]]
+   [cyclops.merge :as merge]))
 
 ;; Ops
-
-(defprotocol Op
-  (weight [this])
-  (operate [this ^Context context]))
-
 
 (defrecord OpContext
     [period         ;; Number of cycles before looping
@@ -20,23 +15,47 @@
      ])
 
 
-(defn op? [e] (satisfies? Op e))
+(defprotocol Weighty
+  (weigh [this]))
 
 
-(defn weigh [e]
-  (if (op? e) (weight e) 1))
+(defn sum-weights
+  "Adds the weights of all children of an op recursively."
+  [stuff]
+  (reduce + (map weigh stuff)))
+
+
+(extend-type java.lang.Object
+  Weighty
+  (weigh [_] 1))
+
+
+(defprotocol Operatic
+  (operate [this ctx]))
 
 
 (def base-context (->OpContext 1 1 1 0))
 
 
-(defn process-pattern
-  [pat]
-  (-> pat
+(defn ->cycle
+  "Takes the base of a raw, nested op structure and turns it into a timed event Cycle."
+  [op]
+  (-> op
       (operate base-context)
       e/collapse-events))
 
 
+(extend-type cyclops.pattern.Operatic
+  e/DoYouRealize?
+  (realize [this ctx] (-> this ->cycle (e/realize ctx))))
+
+
+(defn op?
+  [e]
+  (satisfies? Operatic e))
+
+
+;; TODO: Trampoline with operate?
 (defn apply-timing
   "Given a collection of events and a timing `Context`, recursively schedules
   the events honoring weights."
@@ -53,44 +72,41 @@
               next-start    (+ start (* weight spacing))]
           (recur pat next-start
                  (conj events
-                       (if (op? child)
-                         (operate child ctx) ;; If child is an op, apply with inherited context
-                         ;; Otherwise, add timing information to the event. Event keys can override (e.g., `length`).
-                         (e/->event child
-                                    start
-                                    length
-                                    period))))))))
+                       (cond
+                         (op? child)      (operate child ctx) ;; If child is an op, apply with inherited context
+                         (e/event? child) (assoc child :start start :length length :period period)
+                         :else            (e/->event child ;; Otherwise, add timing information to the event. Event keys can override (e.g., `length`).
+                                          start
+                                          length
+                                          period))))))))
 
 
-(defn sum-weights
-  "Adds the weights of all children of an op recursively."
-  [stuff]
-  (reduce + (map weigh stuff)))
 
+;; TODO: Should be a way to only define update-ctx since that's the only thing
+;; that distinguishes current ops.
 
-(defmacro defop
+#_(defmacro defop
   {:clj-kondo/lint-as :clojure.core/defn :clj-kondo/ignore true}
   [op-name doc args & methods]
-  (let [operate (first (filter #(= 'operate (first %)) methods))
-        weight   (first (filter #(= 'weight (first %)) methods))
-        weight   (or weight '(weight [_] 1))
-        record-name (symbol (s/capitalize op-name))]
-    (assert operate "`operate must be defined for op.")
+  (let [op-kw     (keyword op-name)
+        operate   (first (filter #(= 'operate (first %)) methods))
+        weigh     (first (filter #(= 'weigh (first %)) methods))
+        op-impl   (first (filter #(= op-name (first %)) methods))
+        op-args   (vec (remove #{'&} (butlast args)))
+        splatted? (some #{'&} args)
+        pat-arg   (if splatted? `(u/smart-splat ~(last args)) (last args))]
+    (assert operate "`operate`` must be defined for op.")
     `(let []
-       (defrecord ~record-name [~@args]
-         Op
-         ~weight
-         ~operate)
-       (defn ~op-name
-         ~doc
-         [~@args]
-         (~(symbol (str "->" record-name)) ~@args))
-       (defn ~(symbol (str op-name "*")) ~doc [~@(butlast args) & ~(last args)]
-         (~op-name ~@args)))))
+       (defmethod operate [Op ~op-kw]
+         ~@(rest operate))
+       ~@(when weigh
+           `(defmethod weigh [Op ~op-kw]
+              ~@(rest weigh)))
+       ~(if op-impl
+          `(defn ~op-name ~doc ~@(rest op-impl))
+          `(defn ~op-name ~doc [~@args]
+             (->Op ~op-kw ~op-args ~pat-arg))))))
 
-
-
-;; Fitting Ops
 
 (defn fit-children
   "Squeeze children into inherited segment. Spacing and segment length will be the same. Period remains unchanged."
@@ -106,26 +122,25 @@
                              :segment-length segment-length)))))
 
 
-(defrecord FitOp [children]
-  Op
-  (weight [_] 1)
-  (operate [_ ctx]
-    (fit-children children ctx)))
-
-
-;; Any sequence treated like Tidal's `fastcat`, squeezing notes into the containing context.
 (extend-type clojure.lang.Sequential
-  Op
-  (weight [_] 1)
-  (operate [this ^OpContext context] (fit-children this context)))
+  Operatic
+  (operate [this ctx] (fit-children this ctx))
+  e/DoYouRealize?
+  (realize [this ctx] (e/realize (->cycle this) ctx)))
+
+
+(defrecord FitOp [children]
+  Operatic
+  (operate [_ ctx] (operate children ctx)))
+
+
 
 
 (defrecord TimesOp [n children]
-  Op
-  (weight [_] 1)
-  (operate [_ ctx]
-    (let [children (cycle-n n children)]
-      (fit-children children ctx))))
+  Operatic
+  (operate [_this ctx]
+    (fit-children (u/cycle-n n children) ctx)))
+
 
 
 (defn splice
@@ -138,15 +153,19 @@
 
 
 (defrecord SpliceOp [children]
-  Op
-  (weight [_] (sum-weights children))
-  (operate [_ ctx] (splice children ctx)))
+  Operatic
+  (operate [_this ctx]
+    (splice children ctx))
+  Weighty
+  (weigh [_] (sum-weights children)))
 
 
-(defrecord RepeatOp [x children]
-  Op
-  (weight [_] (* x (sum-weights children)))
-  (operate [_ ctx] (splice (cycle-n x children) ctx)))
+(defrecord RepOp [n children]
+  Operatic
+  (operate [_ ctx]
+    (splice (cycle-n n children) ctx))
+  Weighty
+  (weigh [_] (* n (sum-weights children))))
 
 
 ;; Period Ops
@@ -165,21 +184,8 @@
 
 
 (defrecord SlowOp [x children]
-  Op
-  (weight [_] 1)
+  Operatic
   (operate [_ ctx] (apply-slow x children ctx)))
-
-
-(defrecord CycleOp [children]
-  Op
-  (weight [_] 1)
-  (operate [_ ctx] (apply-slow (sum-weights children) children ctx)))
-
-
-(defrecord MaybeOp [x children]
-  Op
-  (weight [_] (sum-weights children))
-  (operate [_ ctx] (splice (map (fn [e] #(when (< (rand) x) e)) children) ctx)))
 
 
 (defn bjork
@@ -195,49 +201,47 @@
             (conj res (concat (first ps) (first os)))))))
 
 
-(defrecord EuclidianOp [k n r val]
-  Op
-  (weight [_] (* n (weigh val)))
-  (operate [_ ctx]
-    (let [mask     (bjork (repeat k [true]) (repeat (- n k) [nil]))
-          mask     (rot mask (or r 0))
-          children (map #(and % val) mask)]
-      (splice children ctx))))
+(defn basic
+  "Only moves value from `:init` to `:param`"
+  [param pat]
+  (->> pat ->cycle (e/map-events #(e/reassoc-param % :init param))))
 
 
-(defrecord PickOp [children]
-  Op
-  (weight [_] (weigh (first children)))
-  (operate [_ ctx] (splice [#(rand-nth children)] ctx)))
+(defn pat-op
+  [op-fn arg-pat pat]
+  (let [param    (gensym)
+        args     (basic param arg-pat)
+        cycl     (->cycle pat)
+        merge-fn (fn [e o] [(get-in o [:params param]) e])
+        prepared (merge/merge-two merge-fn cycl args :structure-from :both)]
+    (->SpliceOp
+     (map (fn [[arg & evt]] (op-fn arg [evt]))
+          (e/events prepared)))))
 
 
-(defrecord ElongateOp
-  [n children]
-  Op
-  (weight [_] (* n (sum-weights children)))
-  (operate [_ {:keys [segment-length] :as context}]
-           (let [n              (sum-weights children)
-                 segment-length (/ segment-length n)
-                 spacing        segment-length]
-             (apply-timing children (assoc context :segment-length segment-length :spacing spacing)))))
+(defn ->op
+  ([op children]
+   (op (u/smart-splat children)))
+  ([op argpat children]
+   (let [kids (u/smart-splat children)
+         args (u/ensure-vec argpat)]
+     (pat-op op args kids))))
 
-
-(defrecord StackOp [children]
-  Op
-  (weight [_] (apply max (map weigh children)))
-  (operate [_ ctx] (mapcat #(operate % ctx) (map vector children))))
 
 
 ;; Controls
 
-(defn ->control ;; TODO: way to dedup controls?
+;; TODO: Does this work?
+(defn ->ctrl
   [param value-tx pat]
   (let [cyc
         (->> pat
-             process-pattern
+             ->cycle
              (e/map-events
-              #(-> % (e/reassoc-param :init param))))]
-    (e/q-param-xf cyc param value-tx)))
+              #(-> % (e/reassoc-param :init param (fn [v] (u/defer value-tx v))))))
+        cyc]))
+
+
 
 
 (defn rest? [v]

@@ -3,32 +3,51 @@
             [cyclops.util :as u]))
 
 
-(defn stack-merge [b a]
-  (e/qxf a #(u/vector* a b)))
+(defn left-merge [_b a]
+  a)
 
+
+(defn fn-merge [f]
+  (fn [b a]
+    (fn [ctx]
+      (f (e/realize a ctx)
+         (e/realize b ctx)))))
+
+
+(def stack-merge (fn-merge vector))
+
+
+(defn apply-merge
+  [b a]
+  (fn [ctx]
+    (cond
+      (u/fn1? b) (b (e/realize a ctx))
+      (u/fn2? b) (b (e/realize a ctx) ctx))))
 
 
 (defn apply|fn-merge
   [f]
   (fn [b a]
-    (e/qxf a (if (and (fn? b) (not= 0 (u/arity b))) b ;; apply
-                 #(f (assoc % :cur (e/realize-val b %))))))) ;; fn
+    (fn [ctx]
+      (cond
+        (u/fn1? b) (b (e/realize a ctx))
+        (u/fn2? b) (b (e/realize a ctx) ctx)
+        :else (f (e/realize a ctx) (e/realize b ctx))))))
 
 
 (def apply|left-merge
-  (apply|fn-merge #(:prev %)))
+  (apply|fn-merge (fn [a _b] a)))
 
 
 (def apply|stack-merge
-  (apply|fn-merge #(u/vector* (:prev %) (:cur %))))
+  (apply|fn-merge vector))
 
 
-
-(defn apply|maths|stack-merge ;; TODO: Can we do this through composition
+(defn apply|maths|stack-merge
   [f]
   (apply|fn-merge
-   (fn [{:keys [prev cur]}]
-     (if (u/num-enough? prev cur) (f prev cur) (u/vector* prev cur)))))
+   (fn [a b]
+     (if (u/num-enough? a b) (f a b) (vector a b)))))
 
 
 (defn merge-left
@@ -47,16 +66,14 @@
           (assoc :start start :length (- end start))))))
 
 
-
 (defn merge-two
-  [with-fn a b & {:keys [structure-from]
-                  :or   {structure-from :both}}]
+  [merge-fn a b & {:keys [structure-from]
+                   :or   {structure-from :both}}]
   (assert #{:left :both} structure-from)
   (let [[na nb]  (e/normalize-periods a b)
         new-period (e/period na)
         merged-cxfs (into [] (set (concat (e/cycle-xfs a) (e/cycle-xfs b))))
         merged-pxfs (merge-with u/vector* (e/param-xfs a) (e/param-xfs b))
-        merge-fn (case structure-from :left (merge-left with-fn) (merge-both with-fn))
         merged
         (reduce
          (fn [result e]
@@ -73,4 +90,5 @@
 (defn merge-cycles
   ([f cycs] (merge-cycles f cycs :both))
   ([f cycs structure-from]
-   (reduce (fn [a b] (merge-two f a b {:structure-from structure-from})) cycs)))
+   (let [merge-fn (case structure-from :left (merge-left f) (merge-both f))]
+     (reduce (fn [a b] (merge-two merge-fn a b {:structure-from structure-from})) cycs))))
