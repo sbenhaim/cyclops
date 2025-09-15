@@ -20,6 +20,11 @@
   (->op p/->TimesOp n-pat children))
 
 
+(comment
+  (evts
+   (x [2 2 1] [:a :b])))
+
+
 (defn spl
   "Splices events into parent context adjusting segmentation."
   [& children]
@@ -30,21 +35,38 @@
   (->op p/->RepOp n-pat children))
 
 
+(defn -slow [x & children]
+  (p/->SlowOp x (smart-splat children)))
+
 
 (defn slow [x-pat & children]
   (->op p/->SlowOp x-pat children))
 
 
-;; TODO: This doesn't look right
+
+;; TODO: This doesn't work
 (comment
- (evts
-  (slow [1 2] [:a :b])))
+
+  ;; Works
+  (assert (= `({:start 0 :length 1 :init :bd}
+               {:start 1/2 :length 1 :init :sd})
+             (evts (slow [2 2] :bd :sd))))
+
+  ;; Doesn't
+  (assert (= `({:start 0 :length 1 :init :bd}
+               {:start 1 :length 1 :init :sd})
+             (evts (slow 2 :bd :sd))))
 
 
-(defn cyc
-  "Stretches children across n cycles."
-  [& children]
-  (slow (p/sum-weights children) children))
+  (evts
+   (slow 2 :bd :sd))
+  )
+
+
+  (defn cyc
+    "Stretches children across n cycles."
+    [& children]
+    (slow (p/sum-weights children) children))
 
 
 (comment

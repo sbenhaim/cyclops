@@ -67,21 +67,34 @@
 
 
 (defn merge-two
-  [merge-fn a b & {:keys [structure-from]
-                   :or   {structure-from :both}}]
-  (assert #{:left :both} structure-from)
-  (let [[na nb]  (e/normalize-periods a b)
-        new-period (e/period na)
+  "TODO: Break into left-merge double-merge op-merge?"
+  [merge-fn a b & {:keys [mode]
+                   :or   {mode :double-merge}}]
+  (assert #{:left-merge :double-merge :op-merge} mode)
+  (let [[na nb]     (e/normalize-periods a b)
+        new-period  (e/period na)
         merged-cxfs (into [] (set (concat (e/cycle-xfs a) (e/cycle-xfs b))))
         merged-pxfs (merge-with u/vector* (e/param-xfs a) (e/param-xfs b))
+        slice-mode  (case mode
+                      :double-merge :active-during
+                      :left-merge :starts-during
+                      :op-merge :starts-during)
         merged
         (reduce
          (fn [result e]
-           (let [overlap (e/slice nb (:start e) (:length e) {:mode :active-during})
-                 overlap (case structure-from :left (take 1 overlap) :both overlap)]
+           (let [overlap (e/slice nb (:start e) (:length e) {:mode slice-mode})
+                 overlap (case mode
+                           :doube-merge overlap
+                           :left-merge (take 1 overlap)
+                           :op-merge overlap
+                           overlap)]
              (if (seq overlap)
-               (concat result (mapv #(merge-fn e %) overlap))
-               [e])))
+               (case mode
+                 :double-merge (concat result (mapv #(merge-fn e %) overlap))
+                 (conj result (merge-fn e overlap)))
+               (case mode
+                 :op-merge result
+                 (conj result [e])))))
          []
          (e/events na))]
     (e/->Cycle new-period merged merged-cxfs merged-pxfs)))

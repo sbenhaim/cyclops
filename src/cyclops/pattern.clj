@@ -212,11 +212,10 @@
   (let [param    (gensym)
         args     (basic param arg-pat)
         cycl     (->cycle pat)
-        merge-fn (fn [e o] [(get-in o [:params param]) e])
-        prepared (merge/merge-two merge-fn cycl args :structure-from :both)]
-    (->SpliceOp
-     (map (fn [[arg & evt]] (op-fn arg [evt]))
-          (e/events prepared)))))
+        merge-fn (fn [o e] [(get-in o [:params param]) e])
+        prepared (merge/merge-two merge-fn args cycl :mode :op-merge)]
+    (map (fn [[arg evts]] (op-fn arg evts))
+         (e/events prepared))))
 
 
 (defn ->op
