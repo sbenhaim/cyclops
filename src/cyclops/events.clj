@@ -10,32 +10,21 @@
 
 (extend-protocol DoYouRealize?
 
+  nil
+  (realize [_ _] nil)
+
   java.lang.Object
   (realize [this _ctx] this)
 
   clojure.lang.IFn
   (realize [this ctx]
     (case (arity this)
-      0 (this)
-      1 (this ctx)
+      0 (realize (this) ctx)
+      1 (realize (this ctx) ctx)
       this)) ; Or (defer this ctx)?
 
   clojure.lang.ISeq
   (realize [this ctx] (map (p2 realize ctx) this)))
-
-
-#_(defn realize-val
-    [v ctx]
-    (let [param-xfs (get-in ctx [:cycle :param-xfs (:param ctx)] []) ;; TODO: Way to do this at cycle level more cleanly?
-          realized  (if (fn? v)
-                      (case (arity v)
-                        0 (v)
-                        1 (v ctx))
-                      v)]
-      (u/reduce-apply realized param-xfs)))
-
-;; NOTE: Param xfs have to happen after val realization but before merge apply|fn.
-;; Should they happen in merge? Is this already ideal?
 
 
 (defrecord Event [params start length period]
@@ -64,6 +53,16 @@
   (->Event {:init init} start length period))
 
 
+(defn get-param
+  [e param]
+  (get-in e [:params param]))
+
+
+(defn get-init
+  [e]
+  (get-param e :init))
+
+
 (defn update-param
   [e k f & vs]
   (apply update-in e [:params k] f vs))
@@ -86,6 +85,12 @@
   (+ (:start e) (:length e)))
 
 
+(defn event-xf
+  ([f e] (event-xf f e #{:start :length}))
+  ([f e affected]
+   (reduce (fn [e k] (update e k f)) e (u/ensure-coll #{} affected))))
+
+
 (defprotocol Cyclic
   (period [this])
   (events [this]))
@@ -97,7 +102,7 @@
     (realize (events this) ctx)))
 
 
-(defrecord Cycle [period events cycle-xfs param-xfs]
+(defrecord Cycle [period events cycle-xfs]
   Cyclic
   (period [_] period)
   (events [_] events)
@@ -111,12 +116,8 @@
 (defn cycle-xfs [^Cycle cycl] (:cycle-xfs cycl))
 
 
-;; TODO: Eliminate?
-(defn param-xfs [^Cycle cycl] (:param-xfs cycl))
-
-
 (defn ->cycle [period evts]
-  (->Cycle period evts [] {}))
+  (->Cycle period evts []))
 
 
 (defn q-cycle-xf
@@ -127,11 +128,6 @@
 (defn q-event-xf
   [cycl exf]
   (update cycl :cycle-xfs (fn [xfs] (conj xfs #(map exf (events %))))))
-
-
-(defn q-param-xf
-  [cycl param xf]
-  (update-in cycl [:param-xfs param] #(conj (or % []) xf)))
 
 
 (defn map-events

@@ -25,8 +25,11 @@
   (reduce + (map weigh stuff)))
 
 
-(extend-type java.lang.Object
-  Weighty
+(extend-protocol Weighty
+  nil
+  (weigh [_] 1)
+
+  java.lang.Object
   (weigh [_] 1))
 
 
@@ -76,10 +79,9 @@
                          (op? child)      (operate child ctx) ;; If child is an op, apply with inherited context
                          (e/event? child) (assoc child :start start :length length :period period)
                          :else            (e/->event child ;; Otherwise, add timing information to the event. Event keys can override (e.g., `length`).
-                                          start
-                                          length
-                                          period))))))))
-
+                                                     start
+                                                     length
+                                                     period))))))))
 
 
 ;; TODO: Should be a way to only define update-ctx since that's the only thing
@@ -108,7 +110,7 @@
              (->Op ~op-kw ~op-args ~pat-arg))))))
 
 
-(defn fit-children
+(defn apply-fit
   "Squeeze children into inherited segment. Spacing and segment length will be the same. Period remains unchanged."
   [children ^OpContext {:keys [segment-length] :as context}]
   (if-not
@@ -124,7 +126,7 @@
 
 (extend-type clojure.lang.Sequential
   Operatic
-  (operate [this ctx] (fit-children this ctx))
+  (operate [this ctx] (apply-fit this ctx))
   e/DoYouRealize?
   (realize [this ctx] (e/realize (->cycle this) ctx)))
 
@@ -139,7 +141,7 @@
 (defrecord TimesOp [n children]
   Operatic
   (operate [_this ctx]
-    (fit-children (u/cycle-n n children) ctx)))
+    (apply-fit (u/cycle-n n children) ctx)))
 
 
 
@@ -170,7 +172,7 @@
 
 ;; Period Ops
 
-(defn apply-slow
+#_(defn apply-slow
   "Stretch the children across `factor` segments by altering `period` and stretching `spacing` and `segment-length`."
   [x children {:keys [period segment-length] :as context}]
   (let [n              (sum-weights children)
@@ -183,9 +185,27 @@
                                   :segment-length segment-length))))
 
 
+(defn apply-slow
+  "Stretch the children across `factor` segments by altering `period` and stretching `spacing` and `segment-length`."
+  [x children ctx]
+  (let [xf (partial * x)
+        timed (if (every? e/event? children) children (apply-fit children ctx))]
+    (map #(e/event-xf xf % #{:start :length :period}) timed)))
+
+
+
 (defrecord SlowOp [x children]
   Operatic
   (operate [_ ctx] (apply-slow x children ctx)))
+
+
+(defrecord MaybeOp [x children]
+  Operatic
+  (operate [_ ctx]
+    ;; TODO: Is this good?
+    (splice (map (fn [e] #(when (< (rand) x) (e/get-init e))) children) ctx))
+  Weighty
+  (weigh [_] (sum-weights children)))
 
 
 (defn bjork
@@ -201,6 +221,51 @@
             (conj res (concat (first ps) (first os)))))))
 
 
+(defrecord EuclidOp [k n r val]
+  Operatic
+  (operate [_ ctx]
+    (let [mask            (bjork (repeat k [true]) (repeat (- n k) [nil]))
+          mask            (u/rot mask (or r 0))
+          children        (map #(and % val) mask)]
+      (splice children ctx)))
+  Weighty
+  (weigh [_]
+    (* n (weigh val))))
+
+
+(defrecord PickOp [children]
+  Operatic
+  (operate [_ ctx]
+    (splice [#(rand-nth children)] ctx))
+  Weighty
+  (weigh [_] (weigh (first children))))
+
+
+(defrecord ElongateOp [n children]
+  Operatic
+  (operate [op {:keys [segment-length] :as ctx}]
+    (let [children       (children op)
+          n              (sum-weights children)
+          segment-length (/ segment-length n)
+          spacing        segment-length]
+      (apply-timing children (assoc ctx
+                                    :segment-length segment-length
+                                    :spacing spacing))))
+  Weighty
+  (weigh [_] (* n (sum-weights children))))
+
+
+(defrecord StackOp [children]
+  Operatic
+  (operate [_ ctx]
+    (mapcat
+     #(operate % ctx)
+     (map vector children)))
+  Weighty
+  (weigh [_] (apply max (map weigh children))))
+
+
+
 (defn basic
   "Only moves value from `:init` to `:param`"
   [param pat]
@@ -208,14 +273,16 @@
 
 
 (defn pat-op
+  "TODO: Optimize for case of single op arg"
   [op-fn arg-pat pat]
   (let [param    (gensym)
         args     (basic param arg-pat)
         cycl     (->cycle pat)
         merge-fn (fn [o e] [(get-in o [:params param]) e])
         prepared (merge/merge-two merge-fn args cycl :mode :op-merge)]
-    (map (fn [[arg evts]] (op-fn arg evts))
-         (e/events prepared))))
+    (->SpliceOp
+     (map (fn [[arg evts]] (op-fn arg evts))
+          (e/events prepared)))))
 
 
 (defn ->op
@@ -229,17 +296,14 @@
 
 
 ;; Controls
-
-;; TODO: Does this work?
 (defn ->ctrl
-  [param value-tx pat]
-  (let [cyc
-        (->> pat
-             ->cycle
-             (e/map-events
-              #(-> % (e/reassoc-param :init param (fn [v] (u/defer value-tx v))))))
-        cyc]))
-
+[param value-tx pat]
+(let [cyc
+      (->> pat
+           ->cycle
+           (e/map-events
+            #(-> % (e/reassoc-param :init param (fn [v] (u/defer value-tx v))))))]
+  cyc))
 
 
 

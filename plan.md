@@ -8,15 +8,14 @@
 - [x] Separate function realization from merge
 - [x] Figure out why timing doesn't work
 - [x] Smart splat
-- [/] Reduplicate
+- [x] Reduplicate
 - [x] > < <> Merge
 - [/] Shorter hand
   - [-] Magic n/s parsing?
   - [x] Default merge (o 1 :bd :sd :sd) (o 1 [1 2 3 4] [:supersaw]) :or (o 1 [:bd :sd :sd])
 - [x] Once
 - [x] Stack merge
-- [ ] scsynth startup
-- [ ] Core Tidal/Strudel stuff
+- [x] Core Tidal/Strudel stuff
   - [x] OSC
   - [x] Cycling timer
   - [x] Event representation
@@ -25,11 +24,7 @@
   - [x] Pattern mixing
   - [x] Euc
   - [-] Splice as default for []s?
-  - [/] Effects
-  - [/] Oscillators
-  - [ ] Tidal/strudel reference
 - [x] Randomized events
-- [/] Sampling synth with pitch control like superdough
 - [x] Mix in Overtone music namespace
 - [x] Break out namespaces
 - [x] Implement */
@@ -37,6 +32,21 @@
 - [x] Live cps changes
 - [x] Mini notation macro/data
 - [x] Data notation
+- [x] Fix `slow`
+- [ ] Get pattern back from Cycle?
+- [ ] Compare op merge with Tidal/Strudel
+- [ ] Complete ctrl testing
+- [ ] Verify merge fns
+- [ ] Try breaking out different merge modes
+- [ ] Write tests
+- [ ] Implement Tidal strudel stuff
+- [ ] Some actual music
+- [ ] scsynth startup
+- [ ] Core Tidal/Strudel stuff
+  - [/] Effects
+  - [/] Oscillators
+  - [ ] Tidal/strudel reference
+- [/] Sampling synth with pitch control like superdough
 - [ ] Namespace our ctrl params
 - [ ] Make OSC send pluggable
 - [ ] Docs and examples
@@ -44,7 +54,8 @@
 - [ ] Announce
 - [ ] Present
     
-
+## Medium High
+- [ ] Get mixmatched pattern ops to work like Tidal?
 
 ## Medium
 - [ ] Scaling sampler in Overtone

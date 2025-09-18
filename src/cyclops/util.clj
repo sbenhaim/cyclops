@@ -113,9 +113,14 @@
     (p f arg-or-fn)))
 
 
+(defn ensure-coll [col v]
+  (if (coll? v) (into col v)
+      (conj col v)))
+
+
+
 (defn ensure-vec [v]
-  (if (coll? v) (into [] v)
-    [v]))
+  (ensure-coll [] v))
 
 
 (defn vector*

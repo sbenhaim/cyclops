@@ -74,11 +74,10 @@
   (let [[na nb]     (e/normalize-periods a b)
         new-period  (e/period na)
         merged-cxfs (into [] (set (concat (e/cycle-xfs a) (e/cycle-xfs b))))
-        merged-pxfs (merge-with u/vector* (e/param-xfs a) (e/param-xfs b))
         slice-mode  (case mode
                       :double-merge :active-during
                       :left-merge :starts-during
-                      :op-merge :starts-during)
+                      :op-merge :active-during)
         merged
         (reduce
          (fn [result e]
@@ -97,7 +96,7 @@
                  (conj result [e])))))
          []
          (e/events na))]
-    (e/->Cycle new-period merged merged-cxfs merged-pxfs)))
+    (e/->Cycle new-period merged merged-cxfs)))
 
 
 (defn merge-cycles

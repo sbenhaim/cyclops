@@ -1,7 +1,7 @@
 (ns cyclops.ops
   (:require
    [cyclops.pattern :as p :refer [->op]]
-   [cyclops.util :as u :refer [smart-splat collate cycle-n]]
+   [cyclops.util :as u :refer [smart-splat collate]]
    [cyclops.merge :as m]
    [cyclops.events :as e]))
 
@@ -16,13 +16,18 @@
   (->op p/->FitOp children))
 
 
+(comment (-> (fit :a :b [:c :d] :e) evts))
+
+
 (defn x [n-pat & children]
   (->op p/->TimesOp n-pat children))
 
 
 (comment
-  (evts
-   (x [2 2 1] [:a :b])))
+  (->> [:a :b] (x 2) evts)
+  (->> [:a (x 2 :b) :c] evts)
+  (->> [:a :b] (x [2 2]) evts)
+  (->> [:a :b] (x [2 2 1]) evts))
 
 
 (defn spl
@@ -31,12 +36,18 @@
   (->op p/->SpliceOp children))
 
 
+(comment
+  (-> [:a :b (spl :c :d)] evts))
+
+
 (defn rep [n-pat & children]
   (->op p/->RepOp n-pat children))
 
 
-(defn -slow [x & children]
-  (p/->SlowOp x (smart-splat children)))
+(comment
+  (evts (rep [2 2 1] :sd :bd))
+  (evts
+   [:a (rep [2 3] :b :c) :d]))
 
 
 (defn slow [x-pat & children]
@@ -44,129 +55,61 @@
 
 
 
-;; TODO: This doesn't work
 (comment
 
-  ;; Works
-  (assert (= `({:start 0 :length 1 :init :bd}
-               {:start 1/2 :length 1 :init :sd})
-             (evts (slow [2 2] :bd :sd))))
-
   ;; Doesn't
-  (assert (= `({:start 0 :length 1 :init :bd}
-               {:start 1 :length 1 :init :sd})
-             (evts (slow 2 :bd :sd))))
+  (evts (slow [2 2] :bd :sd))
+
+  ;; Works
+  (evts (slow 2 :bd :sd))
 
 
-  (evts
-   (slow 2 :bd :sd))
+  (evts (slow [2 1 2] :bd :sd :cr))
   )
 
 
-  (defn cyc
-    "Stretches children across n cycles."
-    [& children]
-    (slow (p/sum-weights children) children))
-
+(defn cyc
+  "Stretches children across n cycles."
+  [& children]
+  (slow (p/sum-weights children) children))
 
 (comment
-  (->
-   (cyc :a :b :c)
-   evts))
+  (->> (cyc :a [:b :c]) evts))
 
 
-#_(defn slow-ctrl
-    "Numbers and notes."
-    [& pat]
-    (p/->control :slow (collate identity) (smart-splat pat)))
+(defn may
+  [x-pat & children]
+  (->op p/->MaybeOp x-pat children))
+
+(comment
+  (evts (may 0.5 :a))
+  (e/realize (may [1 0.5] :a :b) nil))
 
 
-(defn slow+
-  "Stretches children across n cycles."
-  [arg-pat & children]
-  (apply f| (m/apply|maths|stack-merge *) (slow-ctrl arg-pat) children))
+(defn euc
+  "Euclidian rhythm of `k` active of `n` switches, optionally rotated by `r`."
+  [[k n & [r]] & val]
+  (p/->EuclidOp k n r (smart-splat val)))
 
-
-
-#_(comment
-  (slow-ctrl 1 2 [3 4])
-  (slow+ [1 2] [:a :b]) ;; ???
+(comment
   (evts
-   (slow+ [1 2 [3 4]] (n :a :b :c))))
+   (euc [3 4] :a)))
+
+(defn pick
+  "Each loop, randomly chooses one of its children."
+  [& children]
+  (p/->PickOp  (smart-splat children)))
 
 
-(do
-  (defn may
-    [x & children]
-    (p/->Op :maybe {:x x} (smart-splat children)))
-  (defmethod p/operate :maybe
-    [op ctx]
-    (let [x (-> op p/args :x)]
-      (p/splice (map (fn [e] #(when (< (rand) x) e)) (p/children op)) ctx)))
-  (defmethod p/weigh :maybe
-    [op]
-    (p/sum-weights (p/children op))))
+(defn el
+  [n-pat & children]
+  (p/->op p/->ElongateOp n-pat children))
 
 
-(do
-  (defn euc
-    "Euclidian rhythm of `k` active of `n` switches, optionally rotated by `r`."
-    [[k n & [r]] & val]
-    (p/->Op :euclid {:k k :n n :r r} (smart-splat val)))
-  (defmethod p/operate :euclid
-    [op ctx]
-    (let [{:keys [k n r]} (p/args op)
-          mask     (p/bjork (repeat k [true]) (repeat (- n k) [nil]))
-          mask     (u/rot mask (or r 0))
-          children (map #(and % val) mask)]
-      (p/splice children ctx)))
-  (defmethod p/weigh :euclid
-    [op] (* (-> op p/args :n)
-            (p/weigh (p/children op)))))
-
-
-(do
-  (defn pick
-    "Each loop, randomly chooses one of its children."
-    [& children]
-    (p/->Op :pick nil (smart-splat children)))
-  (defmethod p/operate :pick
-    [op ctx]
-    (p/splice [#(rand-nth (p/children op))] ctx))
-  (defmethod p/weigh :pick
-    [op]
-    (p/weigh (first (p/children op)))))
-
-
-(do
-  (defn el
-    "Stretches note across `n` segments."
-    [n & children]
-    (p/->Op :elongate {:n n} (smart-splat children)))
-  (defmethod p/operate :elongate
-    [op {:keys [segment-length] :as context}]
-    (let [children       (p/children op)
-          n              (p/sum-weights children)
-          segment-length (/ segment-length n)
-          spacing        segment-length]
-      (p/apply-timing children (assoc context
-                                      :segment-length segment-length
-                                      :spacing spacing)))))
-
-
-(do
-  (defn stack
-    "Plays contained patterns or events simultaneously. Can be used to play chords."
-    [& children]
-    (p/->Op :stack nil (smart-splat children)))
-  (defmethod p/operate :stack
-    [op ctx]
-    (mapcat
-     #(p/operate % ctx)
-     (map vector (p/children op))))
-  (defmethod p/weigh :stack
-    [op]
-    (apply max (map p/weigh (p/children op)))))
+(defn stack
+  "Plays contained patterns or events simultaneously. Can be used to play chords."
+  [& children]
+  (p/->StackOp (smart-splat children)))
 
 
 ;; Controls
@@ -174,52 +117,52 @@
 (defn s
   "Samples and synths"
   [& pat]
-  (p/->control :s p/parse-sound (smart-splat pat)))
+  (p/->ctrl :s p/parse-sound (smart-splat pat)))
 
 
 (defn n
   "Numbers and notes."
   [& pat]
-  (p/->control :n p/parse-num (smart-splat pat)))
+  (p/->ctrl :n p/parse-num (smart-splat pat)))
 
 
-(comment (-> (n :a) evts))
+(comment (-> (n (euc [3 5] :d) (pick :a :d) [:b (may 1/2 :c)]) evts))
 
 
 (defn pan
   "Left 0.0, Right 1.0"
   [& pat]
-  (p/->control :pan (collate float) (smart-splat pat)))
+  (p/->ctrl :pan (collate float) (smart-splat pat)))
 
 
 (defn vowel
   ":a :e :i :o :u"
   [& pat]
-  (p/->control :vowel (collate name) (smart-splat pat)))
+  (p/->ctrl :vowel (collate name) (smart-splat pat)))
 
 
 (defn room
   "Reverb room size"
   [& pat]
-  (p/->control :room float (smart-splat pat)))
+  (p/->ctrl :room float (smart-splat pat)))
 
 
 (defn size
   "Reverb size"
   [& pat]
-  (p/->control :size float (smart-splat pat)))
+  (p/->ctrl :size float (smart-splat pat)))
 
 
 (defn dry
   "Reverb dry"
   [& pat]
-  (p/->control :dry float (smart-splat pat)))
+  (p/->ctrl :dry float (smart-splat pat)))
 
 
 (defn legato
   "Play note for `n` segments, then cut."
   [& pat]
-  (p/->control :legato float (smart-splat pat)))
+  (p/->ctrl :legato float (smart-splat pat)))
 
 
 (defn rev-cycl ;; TODO: How to unify? Also, this doesn't work.
