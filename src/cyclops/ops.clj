@@ -45,6 +45,7 @@
 
 
 (comment
+  (evts (rep 2 :sd))
   (evts (rep [2 2 1] :sd :bd))
   (evts
    [:a (rep [2 3] :b :c) :d]))
@@ -71,7 +72,7 @@
 (defn cyc
   "Stretches children across n cycles."
   [& children]
-  (slow (p/sum-weights children) children))
+  (->op p/->CycleOp children))
 
 (comment
   (->> (cyc :a [:b :c]) evts))
@@ -88,8 +89,8 @@
 
 (defn euc
   "Euclidian rhythm of `k` active of `n` switches, optionally rotated by `r`."
-  [[k n & [r]] & val]
-  (p/->EuclidOp k n r (smart-splat val)))
+  [[k n & [r]] & children]
+  (p/->EuclidOp k n r (smart-splat children)))
 
 (comment
   (evts
@@ -98,18 +99,18 @@
 (defn pick
   "Each loop, randomly chooses one of its children."
   [& children]
-  (p/->PickOp  (smart-splat children)))
+  (->op p/->PickOp children))
 
 
 (defn el
   [n-pat & children]
-  (p/->op p/->ElongateOp n-pat children))
+  (->op p/->ElongateOp n-pat children))
 
 
 (defn stack
   "Plays contained patterns or events simultaneously. Can be used to play chords."
   [& children]
-  (p/->StackOp (smart-splat children)))
+  (->op p/->StackOp children))
 
 
 ;; Controls

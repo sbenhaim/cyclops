@@ -33,8 +33,9 @@
 - [x] Mini notation macro/data
 - [x] Data notation
 - [x] Fix `slow`
-- [ ] Get pattern back from Cycle?
-- [ ] Compare op merge with Tidal/Strudel
+- [-] Get pattern back from Cycle?
+- [x] Compare op merge with Tidal/Strudel
+- [ ] Fix op merge
 - [ ] Complete ctrl testing
 - [ ] Verify merge fns
 - [ ] Try breaking out different merge modes
@@ -56,6 +57,8 @@
     
 ## Medium High
 - [ ] Get mixmatched pattern ops to work like Tidal?
+  - [ ] How does it work when there are more args than vals? (rep [2 3] :a)
+  - [ ] How does it work when there are more vals than args? (rep [2 3] :a :b :c)
 
 ## Medium
 - [ ] Scaling sampler in Overtone

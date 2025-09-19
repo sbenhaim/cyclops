@@ -77,7 +77,7 @@
         slice-mode  (case mode
                       :double-merge :active-during
                       :left-merge :starts-during
-                      :op-merge :active-during)
+                      :op-merge :starts-during)
         merged
         (reduce
          (fn [result e]

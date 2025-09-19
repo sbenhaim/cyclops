@@ -75,10 +75,13 @@
          (apply combo/cartesian-product coll-values))))
 
 
-(defn smart-splat [col]
+(defn smart-splat
+  "Unwraps a seq with only one entry to ~~simplify~~ ease-ify the Cyclops UX."
+  [col]
   (if (and (sequential? (first col)) (= 1 (count col)))
     (first col)
     col))
+
 
 
 (defn p
@@ -113,13 +116,17 @@
     (p f arg-or-fn)))
 
 
-(defn ensure-coll [col v]
+(defn ensure-coll
+  "If given a scalar, wrap it in the supplied collection. If given a collection, convert it to the supplied collection."
+  [col v]
   (if (coll? v) (into col v)
       (conj col v)))
 
 
 
-(defn ensure-vec [v]
+(defn ensure-vec
+  "If given a scalar, return a vector containing that scalar. If given a collection, convert it to a vector."
+  [v]
   (ensure-coll [] v))
 
 
