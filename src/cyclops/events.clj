@@ -96,43 +96,42 @@
   (events [this]))
 
 
+(defn cyclic? [thing]
+  (satisfies? Cyclic thing))
+
+
 (extend-type cyclops.events.Cyclic
   DoYouRealize?
   (realize [this ctx]
     (realize (events this) ctx)))
 
 
-(defrecord Cycle [period events cycle-xfs]
+(defrecord Cycle [period events]
   Cyclic
   (period [_] period)
   (events [_] events)
   DoYouRealize?
   (realize [this ctx]
-    (let [ctx (assoc ctx :cycle this)
-          evts (map #(realize % ctx) events)]
-      (u/reduce-apply evts cycle-xfs))))
-
-
-(defn cycle-xfs [^Cycle cycl] (:cycle-xfs cycl))
+    (let [ctx (assoc ctx :cycle this)]
+      (map #(realize % ctx) events))))
 
 
 (defn ->cycle [period evts]
-  (->Cycle period evts []))
-
-
-(defn q-cycle-xf
-  [cycl xf]
-  (update cycl :cycle-xfs #(conj % xf)))
-
-
-(defn q-event-xf
-  [cycl exf]
-  (update cycl :cycle-xfs (fn [xfs] (conj xfs #(map exf (events %))))))
+  (->Cycle period evts))
 
 
 (defn map-events
+  "TODO: Okay that this works on Cycle but not Cyclic?"
   [f cycl]
-  (update cycl :events #(map f %)))
+  (-> cycl
+   (update :events #(map f %))
+   (update :events sort)))
+
+
+(defn rev-cycl
+  [cycl]
+  (let [p (period cycl)]
+    (map-events (fn [e] (update e :start #(- p %))) cycl)))
 
 
 (defn map-params
@@ -157,7 +156,7 @@
        cycle))))
 
 
-(defn slice [cycl from length {:keys [mode] :or {mode :starts-during}}]
+(defn slice [cycl from length mode]
   (assert (#{:starts-during :ends-during :active-during} mode))
   (let [p             (period cycl)
         evts          (events cycl)
@@ -204,7 +203,9 @@
   and creates a flat list of events of a single period.
   Returns a tuple of `[period evts]`.
 
-  Note: Does not currently update :period values in the events themselves."
+  Note: Does not currently update :period values in the events themselves.
+
+  TODO: Way to do without `flatten` for better `reverse` and reversability?"
   [evts]
   (if-not (seq evts)
     []

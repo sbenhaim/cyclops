@@ -33,6 +33,7 @@
   (weigh [_] 1))
 
 
+;; TODO: Add children to interface?
 (defprotocol Operatic
   (operate [this ctx]))
 
@@ -42,13 +43,17 @@
 
 (defn ->cycle
   "Takes the base of a raw, nested op structure and turns it into a timed event Cycle."
-  [op]
-  (-> op
-      (operate base-context)
-      e/collapse-events))
+  ([op] (->cycle op base-context))
+  ([op ctx]
+   (-> op
+       (operate ctx)
+       e/collapse-events)))
 
 
 (extend-type cyclops.pattern.Operatic
+  e/Cyclic
+  (period [this] (e/period (->cycle this)))
+  (events [this] (e/events (->cycle this)))
   e/DoYouRealize?
   (realize [this ctx] (-> this ->cycle (e/realize ctx))))
 
@@ -128,8 +133,11 @@
 (extend-type clojure.lang.Sequential
   Operatic
   (operate [this ctx] (apply-fit this ctx))
-  e/DoYouRealize?
-  (realize [this ctx] (e/realize (->cycle this) ctx)))
+  e/Cyclic
+  (period [this] (e/period (->cycle this)))
+  (events [this] (e/events (->cycle this)))
+  #_e/DoYouRealize?
+  #_(realize [this ctx] (e/realize (->cycle this) ctx)))
 
 
 (defrecord FitOp [children]
@@ -151,15 +159,13 @@
   But now we need to apply timing to ...
 Merges argument pattern with value pattern to produce events."
   [op-fn arg-pat val-pat]
-  (if (= 1 (count arg-pat)) ;; Shortcut for simpler case
-    [(op-fn (first arg-pat) val-pat)]
-    (let [param    (gensym)
-          args     (basic param arg-pat)
-          cycl     (->cycle val-pat)
-          merge-fn (fn [o e] [(get-in o [:params param]) e])
-          prepared (merge/merge-two merge-fn args cycl :mode :op-merge)]
-      (map (fn [[arg evts]] (op-fn arg evts))
-              (e/events prepared)))))
+  (let [param    (gensym)
+        args     (basic param arg-pat)
+        cycl     (->cycle val-pat)
+        merge-fn (fn [o e] [(get-in o [:params param]) e])
+        prepared (merge/merge-cycles merge-fn args cycl :op-merge)]
+    (map (fn [[arg evts]] (op-fn arg evts))
+         (e/events prepared))))
 
 
 (defn ->op
@@ -261,19 +267,35 @@ Merges argument pattern with value pattern to produce events."
 
 
 
+
+(defrecord RevOp [children]
+  Operatic
+  (operate [_ ctx]
+    (let [evts (operate children ctx)]
+      evts
+      #_(-> evts
+          (map (fn [e] (update e :start #(- p %))))
+          sort)))
+  Weighty
+  (weigh [_] (sum-weights children)))
+
+
+(comment
+  (-> (->RevOp [:a [:b :c]]) (operate base-context)))
+
 ;; Period Ops
 
 (defn apply-slow
-    "Stretch the children across `factor` segments by altering `period` and stretching `spacing` and `segment-length`."
-    [x children {:keys [period segment-length] :as context}]
-    (let [n              (sum-weights children)
-          cycle-period   (* x period)
-          spacing        (/ cycle-period n)
-          segment-length (/ (* segment-length x) n)]
-      (apply-timing children (assoc context
-                                    :period cycle-period
-                                    :spacing spacing
-                                    :segment-length segment-length))))
+  "Stretch the children across `factor` segments by altering `period` and stretching `spacing` and `segment-length`."
+  [x children {:keys [period segment-length] :as context}]
+  (let [n              (sum-weights children)
+        cycle-period   (* x period)
+        spacing        (/ cycle-period n)
+        segment-length (/ (* segment-length x) n)]
+    (apply-timing children (assoc context
+                                  :period cycle-period
+                                  :spacing spacing
+                                  :segment-length segment-length))))
 
 
 #_(defn apply-slow
@@ -334,22 +356,46 @@ Merges argument pattern with value pattern to produce events."
   )
 
 
+;; TODO: Can't maybe a group? only each element
 (defrecord MaybeOp1 [x children]
   Operatic
   (operate [_ ctx]
-    (splice (map (fn [e] #(when (< (rand) x) (e/get-init e))) children) ctx))
+    (splice (map (u/p u/maybe x) children) ctx))
   Weighty
   (weigh [_] (sum-weights children)))
 
 
-(defrecord MaybeOp [x* children]
+(comment
+  (-> (->MaybeOp1 1/2 [:a :b]) (e/realize nil))
+  (-> (->MaybeOp1 1/2 [[:a :b]]) (e/realize nil))
+  (-> (->MaybeOp1 1/2 [:c [:a :b]]) (e/realize nil))
+  (-> [:c (->MaybeOp1 1/2 [:a :b])] (e/realize nil))
+  (-> (->CyclOp [(->MaybeOp1 1/2 [:b :c]) :a]) (e/realize nil))
+  (-> [:c (->MaybeOp1 1/2 [(->SpliceOp [:a :b])])] (e/realize nil))
+  ,)
+
+
+(defrecord MaybeOp [x* children mode]
   Operatic
   (operate [_ ctx]
-    (splice
-     (pat-op ->MaybeOp1 x* children)
-     ctx))
+    (letfn [(maybe1 [x kids]
+              (->MaybeOp1 x (cond-> (map e/get-init kids)
+                              (= mode :all) vector)))]
+      (splice
+       (pat-op maybe1 x* children)
+       ctx)))
   Weighty
   (weigh [_] (sum-weights children)))
+
+
+(comment
+  (-> (->MaybeOp [0 1] [:a :b] :all) (e/realize nil))
+  (-> (->MaybeOp [1/2 1] [:a :b] :all) (e/realize nil))
+  (-> (->MaybeOp [1/2] [[:a :b]] :per) (e/realize nil))
+  (-> (->MaybeOp [0 1 1/2] [:a :b [:c :d :e]] :all) (e/realize nil))
+  (-> [(->MaybeOp [1/2] [(->SpliceOp [:a :b])] :per) :c] (e/realize nil))
+  (-> [(->MaybeOp [1/2] [(->SpliceOp [:a :b])] :all) :c] (e/realize nil))
+  ,)
 
 
 (defn bjork
@@ -415,9 +461,6 @@ Merges argument pattern with value pattern to produce events."
      (map vector children)))
   Weighty
   (weigh [_] (apply max (map weigh children))))
-
-
-
 
 
 ;; Controls

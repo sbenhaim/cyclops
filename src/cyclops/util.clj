@@ -23,7 +23,9 @@
     - defined functions like `map` or `+`.
     - macros, by passing a var like `#'->`.
 
-  Returns `:variadic` if the function/macro is variadic."
+  Returns `:variadic` if the function/macro is variadic.
+
+  TODO: SO credit."
   [f]
   (let [func (if (var? f) @f f)
         methods (->> func class .getDeclaredMethods
@@ -56,6 +58,11 @@
 
 (defn fn2? [f?]
   (= 2 (arity f?)))
+
+
+(defn fnv? [f?]
+  (= :variadic (arity f?)))
+
 
 
 (defn divisable? [n divisor]
@@ -169,3 +176,16 @@
       (vector? v) (mapv f v)
       (sequential? v) (map f v)
       :else (f v))))
+
+
+(defn maybe [p v]
+  (when (< (rand) p) v))
+
+
+(defn maybe->
+  [v p f]
+  (if (p v) (f v) v))
+
+
+(comment
+  (maybe-> 2 zero? inc))

@@ -35,11 +35,11 @@
 - [x] Fix `slow`
 - [-] Get pattern back from Cycle?
 - [x] Compare op merge with Tidal/Strudel
-- [ ] Fix op merge
-- [ ] Complete ctrl testing
-- [ ] Verify merge fns
-- [ ] Try breaking out different merge modes
-- [ ] Write tests
+- [x] Fix op merge
+- [x] Complete ctrl testing
+- [x] Verify merge fns
+- [-] Try breaking out different merge modes
+- [/] Write tests
 - [ ] Implement Tidal strudel stuff
 - [ ] Some actual music
 - [ ] scsynth startup
