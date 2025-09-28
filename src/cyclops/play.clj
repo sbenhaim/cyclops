@@ -200,3 +200,72 @@ evts
 (once (+| (n :c2 :eb3 :g3 [:bb3 :c4])) (s :superpiano))
 
 (slow 0.5)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; d1 $ s "bd ~ bd ~"
+
+(o 1 (s :bd nil :bd nil))
+(o 1 (s (rep 2 :bd)))
+(->> [:bd :- :bd :-] s (o 1))
+(->> :bd (rep 2) s (o 1))
+
+;; d2 $ s "[~ hh]*2"
+
+(o 2 (s (rep 2 [nil :hh])))
+(->> [:- :hh] (rep 2) s (o 2))
+
+
+;; d3 $ s "numbers:1"
+(o 3 (+| (n 1) (s :numbers)))
+(o 3 (n 1) (s :numbers))
+(o 3 (m| (n 1) (s :numbers)))
+
+(->> :numbers s (m| (n 1)) (o 3))
+
+;; TODO
+(o 3 (s :numbers:1))
+
+; d4 $ s "cp cp cp"
+
+(o 4 (s :cp :cp :cp))
+
+; d1 $ sound "drum" |+| n "1 2 3"
+
+(o 1 (s :drum) (n 1 2 3)) ;; Implicit
+(o 1 (m| (s :drum) (n 1 2 3))) ;; Explicit
+(->> [1 2 3] n (m| (s :drum)) (o 1)) ;; Thread
+
+
+;; d1 $ sound "drum" |+| n "2 3" |+| n "4 5 6"
+
+(o 1 (s :drum) (n 2 3) (n 4 5 6))
+
+;; d1 $ sound "bd*8" # pan sine
+
+(o 1 (s (x 8 :bd)) (pan (sin))) ;; TODO: Just pass the var? i.e., (pan sin)
+
+;; d1 $ sound "bd*8" # pan cosine # speed (sine + 0.5)
+
+(o 1 (s (x 8 :bd)) (pan cosine) (speed (sin)) (speed 0.5)) ;; TODO: How does speed work?
+
+
+;; d1 $ sound "bd*8" # pan (cat [square, sine])
+
+(o 1 (s (x 8 :bd)) (pan (square) (sin)))
+
+;; n("0 2 4 <[6,8] [7,9]>").scale("C:minor").sound("piano")
+;; TODO: make this work.
+
+
+;; if `scale-nth` is an fn
+(apply| (n 0 2 4 (cyc [6 8] [7 9])) (n (scale-nth :cm4)) (s :piano)) ;; TODO: scale-nth does what you think
+
+;; if `scale-nth` is a op -- variation of `n`, but that takes an arg-pat and applies nth
+(m| (n (scale-nth :cm4 0 2 4 (cyc [6 8] [7 9]))) (s :piano))
+
+;; Types
+
+;; op :: any => Operatic
+;; patop :: Operatic any => Operatic
+;;

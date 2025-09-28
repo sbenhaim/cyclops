@@ -123,18 +123,17 @@
     (p f arg-or-fn)))
 
 
-(defn ensure-coll
-  "If given a scalar, wrap it in the supplied collection. If given a collection, convert it to the supplied collection."
+(defn gimme-coll
+  "If given a scalar, wrap it in the supplied collection. If given a seq, convert it to the supplied collection."
   [col v]
-  (if (coll? v) (into col v)
+  (if (sequential? v) (into col v)
       (conj col v)))
 
 
-
-(defn ensure-vec
-  "If given a scalar, return a vector containing that scalar. If given a collection, convert it to a vector."
+(defn gimme-vec
+  "If given a scalar, return a vector containing that scalar. If given a seq, convert it to a vector."
   [v]
-  (ensure-coll [] v))
+  (gimme-coll [] v))
 
 
 (defn vector*

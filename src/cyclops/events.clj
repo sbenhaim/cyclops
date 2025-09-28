@@ -88,7 +88,7 @@
 (defn event-xf
   ([f e] (event-xf f e #{:start :length}))
   ([f e affected]
-   (reduce (fn [e k] (update e k f)) e (u/ensure-coll #{} affected))))
+   (reduce (fn [e k] (update e k f)) e (u/gimme-coll #{} affected))))
 
 
 (defprotocol Cyclic
@@ -214,3 +214,8 @@
          (group-by :period)
          (map #(apply ->cycle %))
          (reduce sync-periods))))
+
+
+(comment
+  (let [a #(rand-int 10)]
+    [(realize a nil) (realize a nil)]))

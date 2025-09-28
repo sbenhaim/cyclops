@@ -13,7 +13,11 @@
   (expect [{:start 0 :length 1/4  :init :a}
            {:start 1/4 :length 1/4 :init :b}
            {:start 1/2 :length 1/2 :init :c}]
-          (evts (fit [[:a :b] :c]))))
+          (evts (fit [[:a :b] :c])))
+  (expect [{:start 0 :length 1/4  :init :a}
+           {:start 1/4 :length 1/4 :init :b}
+           {:start 1/2 :length 1/2 :init :c}]
+          (evts [[:a :b] :c])))
 
 
 (defexpect test-x
@@ -23,21 +27,30 @@
            {:start 3/6 :length 1/6 :init :b}
            {:start 4/6 :length 1/6 :init :a}
            {:start 5/6 :length 1/6 :init :b}]
-          (evts (x 3 :a :b))))
-
-(defexpect times-nested
-  (expect [{:start 0 :length 1/4   :init :a}
+          (evts (x 3 :a :b)))
+  (expect [{:start 0 :length 1/4 :init :a}
            {:start 1/4 :length 1/4 :init :b}
            {:start 2/4 :length 1/4 :init :a}
            {:start 3/4 :length 1/4 :init :b}]
-          (pp (times 2 [:a :b]))))
+          (evts (x 2 [:a :b]))))
+
+(defexpect test-x-param-pat
+  (expect [{:start 0 :length 1/4   :init :a}
+           {:start 1/4 :length 1/4 :init :a}
+           {:start 1/2 :length 1/4 :init :b}
+           {:start 3/4 :length 1/4 :init :b}]
+          (evts (x [2 2] :a :b)))
+  (expect [{:start 0 :length 1/4   :init :a}
+           {:start 1/4 :length 1/4 :init :a}
+           {:start 1/2 :length 1/2 :init :a}]
+          (evts (x [2 1] :a))))
 
 ;; Cycle operation tests
-(defexpect cyc-basic
+(defexpect test-cyc
   (expect [{:start 0 :length 1 :init :a}
            {:start 1 :length 1 :init :b}
            {:start 2 :length 1 :init :c}]
-          (pp (cyc :a :b :c))))
+          (evts (cyc :a :b :c))))
 
 
 (defexpect cyc-nested

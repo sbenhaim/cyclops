@@ -19,12 +19,6 @@
   (weigh [this]))
 
 
-(defn sum-weights
-  "Adds the weights of all children of an op recursively."
-  [stuff]
-  (reduce + (map weigh stuff)))
-
-
 (extend-protocol Weighty
   nil
   (weigh [_] 1)
@@ -33,7 +27,12 @@
   (weigh [_] 1))
 
 
-;; TODO: Add children to interface?
+(defn sum-weights
+  "Adds the weights of all children of an op recursively."
+  [stuff]
+  (reduce + (map weigh stuff)))
+
+
 (defprotocol Operatic
   (operate [this ctx]))
 
@@ -50,6 +49,7 @@
        e/collapse-events)))
 
 
+;; TODO: Not sure we need/want a Cyclic protocol vs just a Cycle record
 (extend-type cyclops.pattern.Operatic
   e/Cyclic
   (period [this] (e/period (->cycle this)))
@@ -117,7 +117,8 @@
 
 
 (defn apply-fit
-  "Squeeze children into inherited segment. Spacing and segment length will be the same. Period remains unchanged."
+  "Squeeze children into inherited segment. Spacing and segment length will be
+  the same. Period remains unchanged."
   [children ^OpContext {:keys [segment-length] :as context}]
   (if-not
       (seq children) []
@@ -130,7 +131,8 @@
                              :segment-length segment-length)))))
 
 
-(extend-type clojure.lang.Sequential
+;; TODO: Push this as far toward the user as possible to keep implementation *simple* (i.e., not easy)
+#_(extend-type clojure.lang.Sequential
   Operatic
   (operate [this ctx] (apply-fit this ctx))
   e/Cyclic
@@ -143,8 +145,6 @@
 (defrecord FitOp [children]
   Operatic
   (operate [_ ctx] (operate children ctx)))
-
-
 
 
 (defn basic
@@ -173,7 +173,7 @@ Merges argument pattern with value pattern to produce events."
    (op (u/smart-splat children)))
   ([op argpat children]
    (let [kids (u/smart-splat children)
-         args (u/ensure-vec argpat)]
+         args (u/gimme-vec argpat)]
      (op args kids))))
 
 

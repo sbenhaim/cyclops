@@ -1,4 +1,10 @@
 {:deps {overtone/overtone {:mvn/version "0.16.3331"}
         org.clojure/math.numeric-tower {:mvn/version "0.1.0"}
-        org.clojure/math.combinatorics {:mvn/version "0.3.0"}
-        com.rpl/specter {:mvn/version "1.1.4"}}}
+        org.clojure/math.combinatorics {:mvn/version "0.3.0"}}
+ :aliases {:tinker
+           {:extra-deps {com.rpl/specter {:mvn/version "1.1.4"}
+                         hoplon/javelin {:mvn/version "3.9.3"}
+                         reagent/reagent {:mvn/version "2.0.0-alpha2"}
+                         com.github.anjensan/knitty {:mvn/version "0.7.0"}
+                         org.clj-commons/claypoole {:mvn/version "1.2.2"}
+                         metosin/malli {:mvn/version "0.19.1"}}}}}

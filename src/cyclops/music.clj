@@ -72,13 +72,13 @@
 
 (defn scale
   [root scale-name & {:keys [o n incl]
-                      :or {incl 0
-                           o 1}}]
+                      :or   {incl 0
+                             o    1}}]
   (let [notes (butlast (-scale root scale-name))
         cyc   (cycle+12 notes)]
     (cond
-      n (take n cyc)
-      o (take (+ incl (* o (count notes))) cyc)
+      n     (take n cyc)
+      o     (take (+ incl (* o (count notes))) cyc)
       :else cyc)))
 
 

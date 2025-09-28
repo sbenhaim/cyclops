@@ -114,7 +114,7 @@
         slice-mode (case mode
                      :double-merge :active-during  ;; Double merges any events that overlap
                      :left-merge   :starts-during  ;; Left merge merges a b that *starts* during a
-                     :op-merge     :starts-during) ;; Dito op-merge
+                     :op-merge     :active-during) ;; Ditto op-merge
         merged
         (reduce
          (fn [result e]

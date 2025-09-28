@@ -16,6 +16,7 @@
   (->op p/->FitOp children))
 
 
+
 (comment
   (require '[dev-utils.portal :refer [tap-type>]])
   (require '[cyclops.viz :refer [vega-cycl]])
@@ -24,17 +25,25 @@
     ([c] (view c :auto))
     ([c param]
      (tap-type> :vega-lite (vega-cycl c param))))
+
+  p/->cycle
+  (fit :a (cyc :b (el [2 2] :c)))
+  (p/->cycle (el [2 2] :c))
   ,)
 
 
+(rep 12 #(rand-int 10))
 
-(cond-> (fit :a :b :c) )
+(fit (rand-num 10 12))
+
 
 (defn x [n-pat & children]
   (->op p/->TimesOp n-pat children))
 
 
 (comment
+
+  (evts (x 2 :a))
   (->> [:a :b] (x 2) evts)
   (->> [:a (x 2 :b) :c] evts)
   (->> [:a :b] (x [2 2]) evts)
@@ -109,12 +118,12 @@
 
 (defn may
   [x-pat & children]
-  (p/->MaybeOp (u/ensure-vec x-pat) (u/smart-splat children) :per))
+  (p/->MaybeOp (u/gimme-vec x-pat) (u/smart-splat children) :per))
 
 
 (defn may*
   [x-pat & children]
-  (p/->MaybeOp (u/ensure-vec x-pat) (u/smart-splat children) :all))
+  (p/->MaybeOp (u/gimme-vec x-pat) (u/smart-splat children) :all))
 
 
 
@@ -192,8 +201,10 @@
   (extend-protocol Reversible
     clojure.lang.Sequential
     (rev [this] (reverse this))
-    cyclops.pattern.Operatic
+    cyclops.pattern.Operatic ;; TODO: This is wrong. Wouldn't work for EuclideanOp. Can't rev pattern only cycle? (Including naked cycle?)
     (rev [this] (update this :children reverse)) ;; Assume `:children`. Override in particular Ops
+    cyclops.pattern.Operatic ;; NOTE: Doesn't work either. Shouldn't be turning into a cycle without ctx
+    (rev [this] (rev (p/->cycle this)))
     cyclops.events.Cyclic
     (rev [this] (reverse-cycl this)))
 

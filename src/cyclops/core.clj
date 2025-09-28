@@ -127,7 +127,7 @@
         from      (s->pos delta-s period)
         to        (+ from len)
         slc       (e/slice cycl from to {:realize? true})
-        slc       (e/offset-slice (- from) slc)]
+        slc       (e/offset (- from) slc)]
     (when (seq slc)
       (when @verbose
         (println from to len (mapv #(select-keys % [:start :s :n]) slc)))
