@@ -1,7 +1,7 @@
 (ns cyclops.events
   (:require
-   [clojure.math.numeric-tower :refer [lcm]]
-   [cyclops.util :as u :refer [arity p2]]))
+   [cyclops.util :as u :refer [arity p2 lcm]]
+   [cyclops.events :as e]))
 
 
 (defprotocol DoYouRealize?
@@ -21,6 +21,7 @@
     (case (arity this)
       0 (realize (this) ctx)
       1 (realize (this ctx) ctx)
+      2 (realize (this nil ctx) ctx)
       this)) ; Or (defer this ctx)?
 
   clojure.lang.ISeq
@@ -86,80 +87,48 @@
 
 
 (defn event-xf
-  ([f e] (event-xf f e #{:start :length}))
-  ([f e affected]
-   (reduce (fn [e k] (update e k f)) e (u/gimme-coll #{} affected))))
-
-
-(defprotocol Cyclic
-  (period [this])
-  (events [this]))
-
-
-(defn cyclic? [thing]
-  (satisfies? Cyclic thing))
-
-
-(extend-type cyclops.events.Cyclic
-  DoYouRealize?
-  (realize [this ctx]
-    (realize (events this) ctx)))
-
-
-(defrecord Cycle [period events]
-  Cyclic
-  (period [_] period)
-  (events [_] events)
-  DoYouRealize?
-  (realize [this ctx]
-    (let [ctx (assoc ctx :cycle this)]
-      (map #(realize % ctx) events))))
-
-
-(defn ->cycle [period evts]
-  (->Cycle period evts))
-
-
-(defn map-events
-  "TODO: Okay that this works on Cycle but not Cyclic?"
-  [f cycl]
-  (-> cycl
-   (update :events #(map f %))
-   (update :events sort)))
-
-
-(defn rev-cycl
-  [cycl]
-  (let [p (period cycl)]
-    (map-events (fn [e] (update e :start #(- p %))) cycl)))
+  ([e f] (event-xf e f #{:start :length}))
+  ([e f affected]
+   (reduce (fn [e k] (update e k f)) e affected)))
 
 
 (defn map-params
-  [param f cycl]
-  (map-events #(update-in % [:param param] f) cycl))
+  [param f evts]
+  (map #(update-in % [:param param] f) evts))
+
+
+(defn cycl?
+  [v]
+  (every? event? v))
+
+
+(defn period
+  [evts]
+  (assert (cycl? evts) "Period requires a cycl, i.e., coll of cyclops.event.Events.")
+  (apply max (map :period evts)))
 
 
 (defn cycle-events
   "Like clojure.core/cycle but, moves events cyclically forward in time as it cycles"
-  ([cycl] (cycle-events nil cycl))
-  ([n cycl]
-   (let [period (period cycl)
-         evts (events cycl)
-         cycle  (->> evts
-                     repeat
-                     (mapcat
-                      (fn [i cycl]
-                        (map (fn [e] (update e :start #(+ % (* i period)))) cycl))
-                      (range)))]
+  ([evts] (cycle-events nil evts))
+  ([n evts]
+   (let [period (period evts)
+         cycl   (->> evts
+                    repeat
+                    (mapcat
+                     (fn [i cycl]
+                       (map (fn [e] (update e :start #(+ % (* i period)))) cycl))
+                     (range)))]
      (if n
-       (take (* n (count evts)) cycle)
-       cycle))))
+       (->> cycl
+            (map #(assoc % :period (* period n)))
+            (take (* n (count evts))))
+       cycl))))
 
 
-(defn slice [cycl from length mode]
+(defn slice [evts from length mode]
   (assert (#{:starts-during :ends-during :active-during} mode))
-  (let [p             (period cycl)
-        evts          (events cycl)
+  (let [p             (period evts)
         to            (+ from length)
         to            (if (<= to from) (+ to p) to)
         loop          (if (> to p) (cycle-events evts) evts)
@@ -176,44 +145,52 @@
 
 
 
-(defn offset [amount slc]
-  (map #(update % :start (partial + amount)) slc))
+(defn offset [amount evts]
+  (map #(update % :start (partial + amount)) evts))
 
 
-(defn lcp [& cycles]
-  (reduce (fn [m c] (lcm m (period c))) (period (first cycles)) (rest cycles)))
+(defn lcp [cycls]
+  (reduce lcm (map period cycls)))
+
+
+(comment (lcp [[(->event :a 0 1 2)] [(->event :b 0 1 3) (->event :c 1 1 3)] [(->event :d 2 1 4)]]))
 
 
 (defn normalize-periods
-  [a b]
-  (let [p (lcp a b)
-        a (cycle-events (/ p (period a)) a)
-        b (cycle-events (/ p (period b)) b)]
-    [(->cycle p a) (->cycle p b)]))
+  [cycls]
+  (let [p (lcp cycls)]
+    (map #(cycle-events (/ p (period %)) %) cycls)))
 
 
-(defn sync-periods
-  [a b]
-  (let [[a b] (normalize-periods a b)]
-    (->cycle (period a) (concat (events a) (events b)))))
+(comment
+  (normalize-periods [[(->event :a 0 1 2)] [(->event :b 0 1 3) (->event :c 1 1 3)] [(->event :d 2 1 4)]]))
 
 
-(defn collapse-events
+(defn interleave-cycles
+  [cycls]
+  (->> (normalize-periods cycls)
+       (apply concat)
+       sort))
+
+
+(comment
+  (interleave-cycles [[(->event :a 0 1 2)] [(->event :b 0 1 3) (->event :c 1 1 3)] [(->event :d 2 1 4)]]))
+
+
+(defn normalize
   "Takes a potentially nested collection of events of differing periods
-  and creates a flat list of events of a single period.
-  Returns a tuple of `[period evts]`.
-
-  Note: Does not currently update :period values in the events themselves.
-
-  TODO: Way to do without `flatten` for better `reverse` and reversability?"
+  and creates a flat list of events of a single period."
   [evts]
   (if-not (seq evts)
     []
     (->> evts
          flatten
-         (group-by :period)
-         (map #(apply ->cycle %))
-         (reduce sync-periods))))
+         (map vector)
+         interleave-cycles)))
+
+(comment
+  (normalize
+   [(->event :a 0 1 1) [(->event :b 1/2 1 2) (->event :c 3/2 1 2)] [(->event :d 3/4 1 1)]]))
 
 
 (comment

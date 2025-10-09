@@ -1,13 +1,38 @@
 (ns cyclops.ops
   (:require
-   [cyclops.pattern :as p :refer [->op]]
+   [cyclops.pattern :as p]
    [cyclops.util :as u :refer [smart-splat collate]]
    [cyclops.merge :as m]
+   [cyclops.music :as mu]
    [cyclops.events :as e]))
 
 
-(defn evts [rable]
+(defmulti evts type)
+
+
+(defmethod evts :default [rable]
   (e/realize rable nil))
+
+
+;; This is dangerous, prolly. Don't do it.
+#_(defmethod evts clojure.lang.IPersistentVector [s]
+  (-> s p/->cycl (e/realize nil)))
+
+
+(comment (evts [:a :b :c]))
+
+
+(defmethod evts cyclops.pattern.Operatic [op]
+  (-> op p/->cycl (e/realize nil)))
+
+
+(defn ->op
+  ([op children]
+   (op (u/smart-splat children)))
+  ([op argpat children]
+   (let [kids (u/smart-splat children)
+         args (u/gimme-vec argpat)]
+     (op args kids))))
 
 
 (defn fit
@@ -22,23 +47,22 @@
   (require '[cyclops.viz :refer [vega-cycl]])
 
   (defn view
-    ([c] (view c :auto))
+    ([c] (view c nil))
     ([c param]
-     (tap-type> :vega-lite (vega-cycl c param))))
+     (tap-type> :vega-lite (vega-cycl (evts c) param))))
 
-  p/->cycle
-  (fit :a (cyc :b (el [2 2] :c)))
-  (p/->cycle (el [2 2] :c))
+  (p/->cycl
+   (fit :a (cyc :b (fit 2 :c))))
+
+  (evts (fit :a (cyc :b (fit 2 :c))))
+
+  (evts (p/basic-ctrl :s (fit :a (cyc :b (fit 2 :c)))))
+
   ,)
 
 
-(rep 12 #(rand-int 10))
-
-(fit (rand-num 10 12))
-
-
 (defn x [n-pat & children]
-  (->op p/->TimesOp n-pat children))
+  (->op p/->TimesOp* n-pat children))
 
 
 (comment
@@ -71,7 +95,7 @@
 
 
 (defn rep [n-pat & children]
-  (->op p/->RepOp n-pat children))
+  (->op p/->RepOp* n-pat children))
 
 
 (comment
@@ -87,7 +111,7 @@
 
 
 (defn slow [x-pat & children]
-  (->op p/->SlowOp x-pat children))
+  (->op p/->SlowOp* x-pat children))
 
 
 
@@ -100,6 +124,11 @@
   (view (slow [2 2] :bd :sd))
   (view (slow 2 :bd :sd))
   (view (slow [2 1 2] :bd :sd :cr))
+
+  (evts (cyc (n :a :b :c)))
+  (evts (fit (n :a :b :c)))
+  (evts (euc [3 5] (n :a :b)))
+
   )
 
 
@@ -118,19 +147,28 @@
 
 (defn may
   [x-pat & children]
-  (p/->MaybeOp (u/gimme-vec x-pat) (u/smart-splat children) :per))
-
-
-(defn may*
-  [x-pat & children]
-  (p/->MaybeOp (u/gimme-vec x-pat) (u/smart-splat children) :all))
-
+  (p/->MaybeOp* (u/gimme-vec x-pat) (u/smart-splat children) :all))
 
 
 (comment
-  (evts (may [0.5] [[:a :b]]))
-  (evts (may* [0.5] [[:a :b]]))
-  (e/realize (may [1 0.5] :a :b) nil))
+  (->> (may [1 1/2] :a :b :c :d) evts (tap-type> :table)))
+
+
+(defn degrade
+  [x-pat & children]
+  (p/->MaybeOp* (u/gimme-vec x-pat) (u/smart-splat children) :per))
+
+(comment
+  (->> (degrade [1/2] [:a :b :c :d]) evts (tap-type> :table))
+  (->> (degrade [1 1/2] [:a :b :c :d]) evts (tap-type> :table)))
+
+(comment
+  (evts (may 0.5 :a :b)) ; per
+  (evts (may 0.5 [[:a :b]])) ; all
+  (evts (degrade 0.5 :a :b))
+  (evts (may [1 0.5] :a :b))
+  ;; same as
+  (evts (may [1 0.5] :a :b)))
 
 
 (defn euc
@@ -140,9 +178,12 @@
 
 
 (comment
-  (evts (euc [3 4] :a))
-  (view (euc [3 4] :a))
-  (view (euc [5 8] [:a :b [:c :d]])))
+  (-> (euc [5 8] :a) view)
+  (let [p (atom false)]
+    (-> (euc [5 8] (fn [] (swap! p not) (if @p :a :b)))
+        n evts view))
+  (-> (euc [5 8] :a :b) view)
+  (-> (euc [5 8] [:a :b [:c :d]]) view))
 
 (defn pick
   "Each loop, randomly chooses one of its children."
@@ -153,7 +194,7 @@
 (comment
   (def ptop (atom nil))
   (tap> ptop)
-  (reset! ptop (with-meta (vega-cycl (p/->cycle [:a :b :c]))
+  (reset! ptop (with-meta (vega-cycl (evts [:a :b :c]))
                  {:portal.viewer/default :portal.viewer/vega-lite}))
   (def cycl (atom (vega-cycl (p/->cycle [:a (pick :b :c)]) :init)))
   (tap> cycl)
@@ -163,11 +204,13 @@
 
 (defn el
   [n-pat & children]
-  (->op p/->ElongateOp n-pat children))
+  (->op p/->ElongateOp* n-pat children))
 
 
 (comment
- (view [:a (el 2 :b)]))
+ (-> (fit :a (el 2 :b)) evts)
+ (-> [:a (el 2 :b)] fit view)
+ )
 
 
 (defn stack
@@ -176,46 +219,38 @@
   (->op p/->StackOp children))
 
 
+(def stk stack)
+
+
 (comment
-  (view (stack [:a :b] [nil :c :d])))
+  (view (stack [:a :b] [nil :c :d]))
+  (view (stk [:a :b] [nil :c :d])))
 
 
 (defn rev
-  "TODO: This"
   [& children]
-  (spl (reverse (smart-splat children))))
+  (let [cycl (p/->cycl children)
+        p    (e/period cycl)]
+    (->> cycl
+         (map (fn [e] (assoc e :start (- p (:start e) (:length e)))))
+         sort)))
 
 
 (comment
-  ;; API
 
-  (-> [:a [:b :c]] fit rev) ;; Applied to pattern => Maybe reverse on children? Nonrecursive by default
-  (-> [:a [:b :c]] rev fit) ;; Applied to collection => Just `reverse`
-  (-> (+| (n :c) (mu/chord :cm7) (s :superpiano)) rev) ;; Applied to Cycle. Recursive
-  (-> (+| (n :c) (rev (mu/chord :cm7)) (s :superpiano))) ;; Applied to collection
+  (-> (rev :a :b :c) evts)
+  (-> (rev [:a :b] :c) evts)
+  (-> (rev (cyc [:a :b] :c)) evts)
+  (-> [:a [:b :c]] fit rev evts)
+  (-> [:a [:b :c]] rev fit evts) ;; Applied to collection => Just `reverse`. Nah, because [:a :b :c] should usually == (fit :a :b :c)
 
-
-  (defprotocol Reversible
-    (rev [this]))
-
-  (extend-protocol Reversible
-    clojure.lang.Sequential
-    (rev [this] (reverse this))
-    cyclops.pattern.Operatic ;; TODO: This is wrong. Wouldn't work for EuclideanOp. Can't rev pattern only cycle? (Including naked cycle?)
-    (rev [this] (update this :children reverse)) ;; Assume `:children`. Override in particular Ops
-    cyclops.pattern.Operatic ;; NOTE: Doesn't work either. Shouldn't be turning into a cycle without ctx
-    (rev [this] (rev (p/->cycle this)))
-    cyclops.events.Cyclic
-    (rev [this] (reverse-cycl this)))
-
- )
+  ;; TODO
+  (-> (+| (n (mu/chord :cm7)) (s :superpiano)) rev evts) ;; Applied to Cycle. Recursive
+  (-> (+| (rev (mu/chord :cm7)) (s :superpiano)) evts) ;; Applied to collection
 
 
-(comment
-  evts
-  (p/operate
-   (rev :a :b :c)
-   p/base))
+  )
+
 
 ;; Controls
 
@@ -226,8 +261,9 @@
 
 
 (comment
-  (s :c :a :f :e)
-  (evts (s (rep 2 :sd :bd))))
+  (-> (s :c :a :f :e) rev view)
+  (-> [(stack :c :d) :a :f :e] s (view :s))
+  (view (s (rep 2 :sd :bd))))
 
 
 (defn n
@@ -236,25 +272,30 @@
   (p/->ctrl :n p/parse-num (smart-splat pat)))
 
 
+
 (comment
-  (-> [(euc [3 5] :d) (pick :a :b) [:b (may 1/2 :c)]] view)
+  (-> [(euc [3 5] :d) (pick :a :b) [:b (may 1/2 :c)]] (view :init))
   (-> [(euc [3 5] :d) (pick :a :b) [:b (may 1/2 :c)]] evts)
-  (-> (n (euc [3 5] :d) (pick :a :d) [:b (may 1/2 :c)]) (view :s)))
+  (-> (n (euc [3 5] :d) (pick :a :d) [:b (may 1/2 :c)]) (view :n))
+
+  (-> (n [(e/->event [:a :b] 0 1 1)]) evts)
+  )
 
 
 (defn pan
   "Left 0.0, Right 1.0"
   [& pat]
-  (p/->ctrl :pan (collate float) (smart-splat pat)))
+  (p/->ctrl :pan #(-> % (min 1) (max 0) float) (smart-splat pat)))
 
 
 (defn vowel
   ":a :e :i :o :u"
   [& pat]
-  (p/->ctrl :vowel (collate name) (smart-splat pat)))
+  (p/->ctrl :vowel name (smart-splat pat)))
 
 
-(comment (view (vowel :a [:e :i :o] :u)))
+(comment (view (vowel :a [:e :i :o] :u))
+         (evts (vowel {:init [:a :b]} [:e :i :o] :u)))
 
 
 (defn room
@@ -281,36 +322,31 @@
   (p/->ctrl :legato float (smart-splat pat)))
 
 
-#_(defn rev-cycl
-  "Reverse cycle"
-  [& cycl]
-  (e/q-cycle-xf cycl (fn [evts]
-                       (->> evts
-                            (map (fn [e] (update e :start #(- (e/period cycl) %))))
-                            (sort e/event-sort)))))
-
-
+(defn hoist [cycls]
+  (map #(if-not (e/cycl? %) (p/->cycl %) %) cycls))
 
 (comment
-  (-> [:a [:b :c]] p/->cycle e/rev-cycl evts))
+  (hoist [[:a :b :c] (cyc 1 2 3) [(e/->event :a 0 1 1)]]))
 
 
-(defn f| [f & cycles]
-  (m/merge-cycles* f (smart-splat cycles)))
+(defn f| [f & cycls]
+  (m/merge-cycles* f (-> cycls hoist))) ;; <- TODO: Should we smart splat?
 
 
 (comment
 
   (-> (f| m/left-merge (s :a) (s :b)) evts)
   (-> (f| m/left-merge (s :a) (n :b)) evts)
+  (-> (f| m/left-merge [:a] [:b]) evts)
 
   (-> (f| (m/fn-merge vector) (s :a) (n :b)) evts)
   (-> (f| (m/fn-merge vector) (s :a) (s :b)) evts)
+  (-> (f| (m/fn-merge #(and %1 %2)) [1 2 nil] [:a :b :c]) evts)
 
+  (-> (f| (m/fn-merge m/stack-merge) [1] [2]) evts)
 
-  (-> (f| m/and-merge [1 2 nil] [:a :b :c]) evts)
   (-> (f| m/or-merge [1 2 nil] [:a :b :c]) evts)
-
+  (-> (f| m/or-merge (fit 1 2 nil) [:a :b :c]) evts)
 
   (-> (f| m/apply-merge [60 61 62] [inc #(* 2 %)]) evts)
   (-> (f| m/apply-merge [60 61 62] [#(* 2 %)]) evts)
@@ -321,13 +357,14 @@
 
   (-> (f| (m/apply|fn-merge vector) [1 2 3] [inc #(* 2 %) 4]) evts)
   (-> (f| m/apply|left-merge [:a :b] [name :c]) evts)
-  (-> (f| m/apply|stack-merge [:a :b] [name :c]) evts)
+  (-> (f| m/apply|stack-merge [:a :b] [name :c] [:d :e]) evts)
 
+  (-> (f| m/apply|stack-merge (s 1) (s :b)) evts)
   (-> (f| m/apply|stack-merge (n 1) (s :b)) evts)
 
 
   (-> (f| (m/apply|maths|or|stack-merge +) [6 6 6] [2 inc :d]) evts)
-  (-> (f| (m/apply|maths|or|stack-merge +) [nil 0 nil] [2 inc :d]) evts)
+  (-> (f| (m/apply|maths|or|stack-merge -) [nil 0 nil] [2 inc :d]) evts)
   (-> (f| (m/apply|maths|or|stack-merge +) [nil 0 :c] [2 inc :d]) evts)
   (-> (f| (m/apply|maths|or|stack-merge +) [nil 0 :c] [2 inc name]) evts)
 
@@ -336,11 +373,11 @@
 
 
 (defn f> [f & cycles]
-  (m/merge-cycles* f (smart-splat cycles) :left-merge))
+  (m/merge-cycles* f cycles :left-merge))
 
 
 (defn <f [f & cycles]
-  (m/merge-cycles* f (reverse (smart-splat cycles)) :left-merge))
+  (m/merge-cycles* f (reverse cycles) :left-merge))
 
 
 (defn s| [& cycles]
@@ -349,6 +386,7 @@
 
 (comment
   (-> (s| (n :a) (n #(rand-nth [:b :c :d]))) evts)
+  (evts (s| [1 2 3] [:a :b :c] [4 5 6]))
   (-> (s| (n 1) (n inc) (n 2)) evts))
 
 
@@ -378,6 +416,38 @@
   (apply m| + cycles))
 
 
+(comment
+  (evts (s| [2 4 6]
+            [10 inc 8]
+            [:a :b :c]))
+  (evts (s| (n 2 4 6)
+            (n 10 9 8)
+            (n :a :b :c)))
+
+  (+| [1 2 3] [4 5 6])
+
+  (evts (s| (+| [1 2 3] [4 5 6])
+            [:a :b :c]
+            [:d :e :f]))
+
+
+  (evts (s| [:a :b :c]
+            [:d :e :f]
+            (+| [1 2 3] [4 5 6])))
+
+  (evts (f| m/apply|stack-merge
+            [:a :a :a]
+            (f| (fn [a b] (fn [_ ctx] (+ a b))) [1 3 5] [2 4 6])
+            ))
+
+  (evts
+   (+| ))
+
+  (evts (s| (+| [1 2 3] [1 2 3])
+            (m| - [10 10 10] (range 3))
+            [:a :b :c])))
+
+
 (defn +> [& cycles]
   (apply m> + cycles))
 
@@ -388,17 +458,19 @@
 
 (defn jux [tx cyc]
   (s|
-   (+| cyc (pan 0))
-   (+| (tx cyc) (pan 1))))
+   (pan 0 cyc)
+   (pan 1 (tx cyc))))
 
-
+(comment
+  (evts
+   (jux rev (n 1 2 3))))
 
 (defn sin
   ([] (sin 0 1 1))
   ([max] (sin 0 max 1))
   ([min max] (sin min max 1))
   ([min max period]
-   (fn [{:keys [event]}]
+   (fn [_ {:keys [event]}]
      (let [TAU  (* 2 Math/PI)
            mult (-> max (- min) (/ 2))
            base (-> (:start event) (* TAU) (/ period) Math/sin (+ 1) (* mult))

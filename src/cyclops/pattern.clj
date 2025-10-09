@@ -40,22 +40,19 @@
 (def base-context (->OpContext 1 1 1 0))
 
 
-(defn ->cycle
-  "Takes the base of a raw, nested op structure and turns it into a timed event Cycle."
-  ([op] (->cycle op base-context))
+(defn ->cycl
+  "Takes the base of a raw, nested op structure and turns it into a timed cycle."
+  ([op] (->cycl op base-context))
   ([op ctx]
    (-> op
        (operate ctx)
-       e/collapse-events)))
+       e/normalize)))
 
 
-;; TODO: Not sure we need/want a Cyclic protocol vs just a Cycle record
+;; TODO: This a good idea?
 (extend-type cyclops.pattern.Operatic
-  e/Cyclic
-  (period [this] (e/period (->cycle this)))
-  (events [this] (e/events (->cycle this)))
   e/DoYouRealize?
-  (realize [this ctx] (-> this ->cycle (e/realize ctx))))
+  (realize [this] (e/realize (->cycl this) nil)))
 
 
 (defn op?
@@ -63,11 +60,18 @@
   (satisfies? Operatic e))
 
 
-
 ;; TODO: Trampoline with operate?
 (defn apply-timing
   "Given a collection of events and a timing `Context`, recursively schedules
-  the events honoring weights."
+  the events honoring weights.
+
+  Three behavior modes depending on the pat provided
+
+  1. Op -> Create a nested list of timed events (use `events/normalize` to flatten)
+  2. Cycl -> Retimes the events
+  3. [maps] -> Treats maps as the params of newly created events
+
+"
   [pat ^OpContext {:keys [period spacing segment-length start] :as context}]
   (loop [pat pat start start events []]
     (if-not
@@ -84,208 +88,143 @@
                        (cond
                          (op? child)      (operate child ctx) ;; If child is an op, apply with inherited context
                          (e/event? child) (assoc child :start start :length length :period period)
+                         (map? child)     (e/->Event child start length period)
                          :else            (e/->event child ;; Otherwise, add timing information to the event. Event keys can override (e.g., `length`).
                                                      start
                                                      length
                                                      period))))))))
 
 
-;; TODO: Should be a way to only define update-ctx since that's the only thing
-;; that distinguishes current ops.
-
-#_(defmacro defop
-  {:clj-kondo/lint-as :clojure.core/defn :clj-kondo/ignore true}
-  [op-name doc args & methods]
-  (let [op-kw     (keyword op-name)
-        operate   (first (filter #(= 'operate (first %)) methods))
-        weigh     (first (filter #(= 'weigh (first %)) methods))
-        op-impl   (first (filter #(= op-name (first %)) methods))
-        op-args   (vec (remove #{'&} (butlast args)))
-        splatted? (some #{'&} args)
-        pat-arg   (if splatted? `(u/smart-splat ~(last args)) (last args))]
-    (assert operate "`operate`` must be defined for op.")
-    `(let []
-       (defmethod operate [Op ~op-kw]
-         ~@(rest operate))
-       ~@(when weigh
-           `(defmethod weigh [Op ~op-kw]
-              ~@(rest weigh)))
-       ~(if op-impl
-          `(defn ~op-name ~doc ~@(rest op-impl))
-          `(defn ~op-name ~doc [~@args]
-             (->Op ~op-kw ~op-args ~pat-arg))))))
-
-
-(defn apply-fit
+(defn squeeze
   "Squeeze children into inherited segment. Spacing and segment length will be
   the same. Period remains unchanged."
   [children ^OpContext {:keys [segment-length] :as context}]
   (if-not
       (seq children) []
       (let [n              (sum-weights children)
-            spacing        (/ segment-length n)
-            segment-length spacing]
+            segment-length (/ segment-length n)]
         (apply-timing children
                       (assoc context
-                             :spacing spacing
+                             :spacing segment-length
                              :segment-length segment-length)))))
 
 
-;; TODO: Push this as far toward the user as possible to keep implementation *simple* (i.e., not easy)
-#_(extend-type clojure.lang.Sequential
+(extend-type clojure.lang.Sequential
   Operatic
-  (operate [this ctx] (apply-fit this ctx))
-  e/Cyclic
-  (period [this] (e/period (->cycle this)))
-  (events [this] (e/events (->cycle this)))
-  #_e/DoYouRealize?
-  #_(realize [this ctx] (e/realize (->cycle this) ctx)))
+  (operate [this ctx] (squeeze this ctx)))
 
 
 (defrecord FitOp [children]
   Operatic
-  (operate [_ ctx] (operate children ctx)))
-
-
-(defn basic
-  "Ctrl that moves value from `:init` to `:param`"
-  [param pat]
-  (->> pat ->cycle (e/map-events #(e/reassoc-param % :init param))))
-
-
-(defn pat-op
-  "TODO: In converting merge from def-time to op-time, I broke it.
-  Advantage is that ops retain a simple, declarative state
-  But now we need to apply timing to ...
-Merges argument pattern with value pattern to produce events."
-  [op-fn arg-pat val-pat]
-  (let [param    (gensym)
-        args     (basic param arg-pat)
-        cycl     (->cycle val-pat)
-        merge-fn (fn [o e] [(get-in o [:params param]) e])
-        prepared (merge/merge-cycles merge-fn args cycl :op-merge)]
-    (map (fn [[arg evts]] (op-fn arg evts))
-         (e/events prepared))))
-
-
-(defn ->op
-  ([op children]
-   (op (u/smart-splat children)))
-  ([op argpat children]
-   (let [kids (u/smart-splat children)
-         args (u/gimme-vec argpat)]
-     (op args kids))))
-
-
-
-(defrecord TimesOp1 [n children]
-  Operatic
-  (operate [_ ctx]
-    (apply-fit (u/cycle-n n children) ctx)))
-
-
-(comment (-> (->TimesOp1 3 [:a]) ->cycle e/events)
-         (-> [(->TimesOp1 3 [:a]) :b] ->cycle e/events))
-
-(comment
-  (pat-op ->TimesOp1 [2 2] [:a :b]))
-
-(defrecord TimesOp [n* children]
-  Operatic
-  (operate [_ ctx]
-    (apply-fit
-     (pat-op ->TimesOp1 n* children)
-     ctx)))
-
-
-(comment
-  (-> (->TimesOp [2] [:a]) ->cycle e/events)
-  (-> (->TimesOp [2] [:a :b]) ->cycle e/events)
-  (-> (->TimesOp [2 2] [:a :b]) ->cycle e/events)
-  (-> (->FitOp [:c (->TimesOp [2] [:a])]) ->cycle e/events)
-  (-> (->FitOp [(->TimesOp [2] [:a :b]) :c]) ->cycle e/events)
-  (-> (->FitOp [(->TimesOp [2 2] [:a :b]) :c]) ->cycle e/events))
-
-
-(defn splice
-  [children ^OpContext {:keys [segment-length] :as context}]
-  (let [n              (sum-weights children)
-        segment-length (/ segment-length n)]
-    (apply-timing children (assoc context
-                                  :spacing segment-length
-                                  :segment-length segment-length))))
+  (operate [_ ctx] (squeeze children ctx)))
 
 
 (defrecord SpliceOp [children]
   Operatic
   (operate [_this ctx]
-    (splice children ctx))
+    (squeeze children ctx))
   Weighty
   (weigh [_] (sum-weights children)))
 
 
-(defrecord RepOp1 [n children]
+(defn basic-ctrl
+  "Ctrl that moves value from `:init` to `:param`"
+  [param pat]
+  (->> pat ->cycl (map #(e/reassoc-param % :init param))))
+
+
+(defn op-merge
+  "Given a fn that applies an operator to a single arg, a arg Pattern and a
+  value pattern, operates on the merge of arguments with values.
+
+  TODO: Don't love this here. Maybe this is an op thing? Higher-order op interface creation?"
+  [->op arg-pat val-pat]
+  (if (= 1 (count arg-pat))
+    (->op (first arg-pat) (->cycl val-pat))
+    (let [param    (gensym)
+          args     (basic-ctrl param arg-pat)
+          cycl     (->cycl val-pat)
+          merge-fn (fn [o evts] (->op (get-in o [:params param]) evts))]
+      (merge/merge-cycles merge-fn args cycl :op-merge))))
+
+
+(defrecord TimesOp [n children]
   Operatic
   (operate [_ ctx]
-    (splice (cycle-n n children) ctx))
+    (squeeze (u/cycle-n n children) ctx)))
+
+
+
+(comment (-> (->TimesOp 3 [:a]) ->cycl)
+         (-> [(->TimesOp 3 [:a]) :b] ->cycl)
+         (-> (->TimesOp 3 [(e/->event :a 0 1 1)]) ->cycl))
+
+
+(defrecord TimesOp* [n* children]
+  Operatic
+  (operate [_ ctx]
+    (operate (op-merge ->TimesOp n* children) ctx)))
+
+
+(comment
+  (-> (->TimesOp* [2] [:a]) ->cycl)
+  (-> (->TimesOp* [2] [:a :b]) ->cycl)
+  (-> (->TimesOp* [2 2] [:a :b]) ->cycl)
+  (-> (->FitOp [:c (->TimesOp* [2] [:a])]) ->cycl)
+  (-> (->FitOp [(->TimesOp* [2] [:a :b]) :c]) ->cycl)
+  (-> [(->TimesOp* [2 2] [:a :b]) :c] ->cycl))
+
+
+(defrecord RepOp [n children]
+  Operatic
+  (operate [_ ctx]
+    (squeeze (cycle-n n children) ctx))
   Weighty
   (weigh [_] (* n (sum-weights children))))
 
 
 (comment
-  (-> (->RepOp1 2 [:a :b]) ->cycle :events)
-  (-> (->FitOp [(->RepOp1 2 [:a :b]) :c]) ->cycle :events))
+  (-> (->RepOp 2 [:a :b]) ->cycl)
+  (-> (->FitOp [(->RepOp 2 [:a :b]) :c]) ->cycl))
 
 
-(defrecord RepOp [n* children]
+(defn- rep-op-merge
+  [n* children]
+  (op-merge ->RepOp n* children))
+
+
+(defrecord RepOp* [n* children]
   Operatic
   (operate [_ ctx]
-    (splice
-     (pat-op ->RepOp1 n* children)
-     ctx))
+    (operate (rep-op-merge n* children) ctx))
   Weighty
-  (weigh [_] (sum-weights (pat-op ->RepOp1 n* children))))
+  (weigh [_] (sum-weights (rep-op-merge n* children))))
+
 
 
 (comment
-  (-> (->RepOp [2] [:a]) ->cycle :events)
-  (-> (->RepOp [2] [:a]) weigh)
-  (-> (->RepOp [2] [:a :b]) ->cycle :events)
-  (-> (->RepOp [2] [:a :b]) weigh)
-  (-> (->RepOp [2 2] [:a :b]) ->cycle :events)
+  (-> (->RepOp* [2] [:a]) ->cycl)
+  (-> (->RepOp* [2] [:a]) weigh)
+  (-> (->RepOp* [2] [:a :b]) ->cycl)
+  (-> (->RepOp* [2] [:a :b]) weigh)
+  (-> (->RepOp* [2 2] [:a :b]) ->cycl)
 
-  (-> (->FitOp [(->RepOp [2] [:a]) :c]) ->cycle :events)
-  (-> (->FitOp [(->RepOp [2] [:a :b]) :c]) ->cycle :events)
-  (-> (->FitOp [(->RepOp [2 2] [:a :b]) :c]) ->cycle :events)
+  (-> (->FitOp [(->RepOp* [2] [:a]) :c]) ->cycl)
+  (-> (->FitOp [(->RepOp* [2] [:a :b]) :c]) ->cycl)
+  (-> (->FitOp [(->RepOp* [2 2] [:a :b]) :c]) ->cycl)
 
-  (-> (->SlowOp [3] [(->RepOp [2] [:a]) :b]) ->cycle :events)
-  (-> (->SlowOp [5] [(->RepOp [2] [:a :b]) :c]) ->cycle :events)
-  (-> (->SlowOp [5] [(->RepOp [2 2] [:a :b]) :c]) ->cycle :events)
+  (-> (->SlowOp 3 [:a (->RepOp* [2] [:a])]) ->cycl)
+  (-> (->SlowOp 3 [(->RepOp* [2] [:a]) :b]) ->cycl)
+  (-> (->SlowOp 5 [(->RepOp* [2] [:a :b]) :c]) ->cycl)
+  (-> (->SlowOp 5 [(->RepOp* [2 2] [:a :b]) :c]) ->cycl)
 
 
   )
 
 
-
-
-(defrecord RevOp [children]
-  Operatic
-  (operate [_ ctx]
-    (let [evts (operate children ctx)]
-      evts
-      #_(-> evts
-          (map (fn [e] (update e :start #(- p %))))
-          sort)))
-  Weighty
-  (weigh [_] (sum-weights children)))
-
-
-(comment
-  (-> (->RevOp [:a [:b :c]]) (operate base-context)))
-
 ;; Period Ops
 
-(defn apply-slow
+(defn stretch
   "Stretch the children across `factor` segments by altering `period` and stretching `spacing` and `segment-length`."
   [x children {:keys [period segment-length] :as context}]
   (let [n              (sum-weights children)
@@ -298,46 +237,39 @@ Merges argument pattern with value pattern to produce events."
                                   :segment-length segment-length))))
 
 
-#_(defn apply-slow
-  "Stretch the children across `factor` segments by altering `period` and stretching `spacing` and `segment-length`."
-  [x children ctx]
-  (let [xf (partial * x)
-        timed (if (every? e/event? children) children (apply-fit children ctx))]
-    (map #(e/event-xf xf % #{:start :length :period}) timed)))
 
-
-(defrecord SlowOp1 [x children]
+(defrecord SlowOp [x children]
   Operatic
   (operate [_ ctx]
-    (apply-slow x children ctx)))
+    (stretch x children ctx)))
 
 
 (comment
-  (-> (->SlowOp1 2 [:a]) ->cycle :events)
-  (-> (->SlowOp1 2 [:a :b]) ->cycle :events)
-  (-> (->SlowOp1 2 [:a :b :c]) ->cycle :events)
-  (-> (->FitOp [(->SlowOp1 2 [:a :b]) :c]) ->cycle :events)
+  (-> (->SlowOp 2 [:a]) ->cycl)
+  (-> (->SlowOp 2 [:a :b]) ->cycl)
+  (-> (->SlowOp 2 [:a :b :c]) ->cycl)
+  (-> (->FitOp [(->SlowOp 2 [:a :b]) :c]) ->cycl)
   )
 
 
-(defrecord SlowOp [x* children]
+(defrecord SlowOp* [x* children]
   Operatic
   (operate [_ ctx]
-    (apply-fit
-     (pat-op ->SlowOp1 x* children)
+    (operate
+     (op-merge ->SlowOp x* children)
      ctx)))
 
 
 (comment
-  (-> (->SlowOp [2] [:sd]) ->cycle :events)
-  (-> (->SlowOp [2] [:sd :bd]) ->cycle :events)
-  (-> (->SlowOp [2 2] [:sd :bd]) ->cycle :events)
-  (-> (->SlowOp [2 1] [:sd :bd]) ->cycle :events)
+  (-> (->SlowOp* [2] [:sd]) ->cycl)
+  (-> (->SlowOp* [2] [:sd :bd]) ->cycl)
+  (-> (->SlowOp* [2 2] [:sd :bd]) ->cycl)
+  (-> (->SlowOp* [2 1] [:sd :bd]) ->cycl)
 
-  (-> (->FitOp [:cr (->SlowOp [2] [:sd])]) ->cycle :events)
-  (-> (->FitOp [:cr (->SlowOp [2] [:sd :bd])])   ->cycle :events)
-  (-> (->FitOp [:cr (->SlowOp [2 2] [:sd :bd])]) ->cycle :events)
-  (-> (->FitOp [:cr (->SlowOp [2 1] [:sd :bd])]) ->cycle :events)
+  (-> (->FitOp [:cr (->SlowOp [2] [:sd])]) ->cycl)
+  (-> (->FitOp [:cr (->SlowOp [2] [:sd :bd])])   ->cycl)
+  (-> (->FitOp [:cr (->SlowOp [2 2] [:sd :bd])]) ->cycl)
+  (-> (->FitOp [:cr (->SlowOp [2 1] [:sd :bd])]) ->cycl)
 
 
   )
@@ -346,55 +278,57 @@ Merges argument pattern with value pattern to produce events."
 (defrecord CyclOp [children]
   Operatic
   (operate [_ ctx]
-    (apply-slow (sum-weights children) children ctx)))
+    (stretch (sum-weights children) children ctx)))
 
 
 (comment
-  (-> (->CyclOp [:sd])         ->cycle :events)
-  (-> (->CyclOp [:sd :bd])     ->cycle :events)
-  (-> (->CyclOp [:sd :bd :cr]) ->cycle :events)
+  (-> (->CyclOp [:sd])         ->cycl)
+  (-> (->CyclOp [:sd :bd])     ->cycl)
+  (-> (->CyclOp [:sd :bd :cr]) ->cycl)
   )
 
 
-;; TODO: Can't maybe a group? only each element
-(defrecord MaybeOp1 [x children]
+(defrecord MaybeOp [x children]
   Operatic
   (operate [_ ctx]
-    (splice (map (u/p u/maybe x) children) ctx))
+    (squeeze (map (u/p u/maybe x) children) ctx))
   Weighty
   (weigh [_] (sum-weights children)))
 
 
 (comment
-  (-> (->MaybeOp1 1/2 [:a :b]) (e/realize nil))
-  (-> (->MaybeOp1 1/2 [[:a :b]]) (e/realize nil))
-  (-> (->MaybeOp1 1/2 [:c [:a :b]]) (e/realize nil))
-  (-> [:c (->MaybeOp1 1/2 [:a :b])] (e/realize nil))
-  (-> (->CyclOp [(->MaybeOp1 1/2 [:b :c]) :a]) (e/realize nil))
-  (-> [:c (->MaybeOp1 1/2 [(->SpliceOp [:a :b])])] (e/realize nil))
+  (-> (->MaybeOp 1/2 [:a :b]) ->cycl (e/realize nil))
+  (-> (->MaybeOp 1/2 [[:a :b]]) ->cycl (e/realize nil))
+  (-> (->MaybeOp 1/2 [:c [:a :b]]) ->cycl (e/realize nil))
+  (-> [:c (->MaybeOp 1/2 [:a :b])] ->cycl (e/realize nil))
+  (-> (->CyclOp [(->MaybeOp 1/2 [:b :c]) :a]) ->cycl (e/realize nil))
+  (-> [:c (->MaybeOp 1/2 (->SpliceOp [:a :b]))] ->cycl (e/realize nil))
+  (-> [:c (->MaybeOp 1/2 [:a :b])] ->cycl (e/realize nil))
   ,)
 
 
-(defrecord MaybeOp [x* children mode]
+(defrecord MaybeOp* [x* children mode]
   Operatic
   (operate [_ ctx]
     (letfn [(maybe1 [x kids]
-              (->MaybeOp1 x (cond-> (map e/get-init kids)
-                              (= mode :all) vector)))]
-      (splice
-       (pat-op maybe1 x* children)
-       ctx)))
+              (->MaybeOp x (cond-> (map e/get-init kids)
+                             (= mode :all) vector)))]
+      (operate (op-merge maybe1 x* children) ctx)))
   Weighty
   (weigh [_] (sum-weights children)))
 
 
 (comment
-  (-> (->MaybeOp [0 1] [:a :b] :all) (e/realize nil))
-  (-> (->MaybeOp [1/2 1] [:a :b] :all) (e/realize nil))
-  (-> (->MaybeOp [1/2] [[:a :b]] :per) (e/realize nil))
-  (-> (->MaybeOp [0 1 1/2] [:a :b [:c :d :e]] :all) (e/realize nil))
-  (-> [(->MaybeOp [1/2] [(->SpliceOp [:a :b])] :per) :c] (e/realize nil))
-  (-> [(->MaybeOp [1/2] [(->SpliceOp [:a :b])] :all) :c] (e/realize nil))
+  (-> (->MaybeOp* [0 1] [:a :b] :all) ->cycl (e/realize nil))
+  (-> (->MaybeOp* [1/2] [:a :b] :per) ->cycl (e/realize nil))
+
+  (-> (->MaybeOp* [0 1 1/2] [:a :b [:c :d]] :all) ->cycl (e/realize nil))
+  (-> (->MaybeOp* [0 1 1/2] [:a :b [:c :d]] :per) ->cycl (e/realize nil))
+
+  (-> (->MaybeOp* [0 1 1] [:a :b (->MaybeOp 1/2 [:c :d])] :per) ->cycl (e/realize nil))
+
+  (-> [(->MaybeOp* [1/2] [(->SpliceOp [:a :b])] :per) :c] ->cycl (e/realize nil))
+  (-> [(->MaybeOp* [1/2] [(->SpliceOp [:a :b])] :all) :c] ->cycl (e/realize nil))
   ,)
 
 
@@ -417,7 +351,7 @@ Merges argument pattern with value pattern to produce events."
     (let [mask            (bjork (repeat k [true]) (repeat (- n k) [nil]))
           mask            (u/rot mask (or r 0))
           children        (map #(and % children) mask)]
-      (splice children ctx)))
+      (squeeze children ctx)))
   Weighty
   (weigh [_]
     (* n (weigh val))))
@@ -426,30 +360,40 @@ Merges argument pattern with value pattern to produce events."
 (defrecord PickOp [children]
   Operatic
   (operate [_ ctx]
-    (splice [#(rand-nth children)] ctx))
+    (squeeze [#(rand-nth children)] ctx))
   Weighty
   (weigh [_] (weigh (first children))))
 
 
-(defrecord ElongateOp1 [n children]
+(defrecord ElongateOp [x children]
   Operatic
   (operate [_ ctx]
-    (let [n              (sum-weights children)
-          segment-length (/ (:segment-length ctx) n)
-          spacing        segment-length]
-      (apply-timing children (assoc ctx
-                                    :segment-length segment-length
-                                    :spacing spacing))))
+    (squeeze children ctx))
   Weighty
-  (weigh [_] (* n (sum-weights children))))
+  (weigh [_] (* x (sum-weights children))))
 
 
-(defrecord ElongateOp [n* children]
+(comment
+  (-> [:a (->ElongateOp 2 [:b])] ->cycl)
+  (-> (->CyclOp [:a (->ElongateOp 2 [:b])]) ->cycl))
+
+
+(defn- op-merge-elong
+  [x* children]
+  (op-merge ->ElongateOp x* children))
+
+
+(defrecord ElongateOp* [x* children]
   Operatic
   (operate [_ ctx]
-    (splice (pat-op ->ElongateOp1 n* children) ctx))
+    (operate (op-merge-elong x* children) ctx))
   Weighty
-  (weigh [_] (sum-weights (pat-op ->ElongateOp1 n* children))))
+  (weigh [_] (sum-weights (op-merge-elong x* children))))
+
+
+(comment
+  (-> (->ElongateOp* [2] [:a]) weigh)
+  (-> (->FitOp [(->ElongateOp* [2] [:a]) :b]) ->cycl))
 
 
 
@@ -464,14 +408,12 @@ Merges argument pattern with value pattern to produce events."
 
 
 ;; Controls
+;; TODO: Just move to op?
 (defn ->ctrl
   [param value-tx pat]
-  (let [cyc
-        (->> pat
-             ->cycle
-             (e/map-events
-              #(-> % (e/reassoc-param :init param (fn [v] (u/defer value-tx v))))))]
-    cyc))
+  (->> pat
+       ->cycl
+       (map (fn [evt] (e/reassoc-param evt :init param #(u/defer (u/collate value-tx) %))))))
 
 
 
@@ -481,13 +423,12 @@ Merges argument pattern with value pattern to produce events."
 
 (defn parse-num
   [n]
-  (if (coll? n) (mapv parse-num n)
-      (cond
-        (rest? n)    nil
-        (keyword? n) (m/note n)
-        (string? n)  (m/note n)
-        (number? n)  (float n)
-        :else        n)))
+  (cond
+    (rest? n)    nil
+    (keyword? n) (m/note n)
+    (string? n)  (m/note n)
+    (number? n)  (float n)
+    :else        n))
 
 
 (comment
@@ -496,8 +437,7 @@ Merges argument pattern with value pattern to produce events."
 
 (defn parse-sound
   [s]
-  (if (coll? s) (mapv parse-sound s)
-      (cond
-        (rest? s)    nil
-        (keyword? s) (name s)
-        :else        s)))
+  (cond
+    (rest? s)    nil
+    (keyword? s) (name s)
+    :else        s))

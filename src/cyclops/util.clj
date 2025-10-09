@@ -1,6 +1,22 @@
-(ns cyclops.util
-  (:require
-   [clojure.math.combinatorics :as combo]))
+(ns cyclops.util)
+
+
+(defn gcd [a b]
+  (if (zero? b)
+    a
+    (recur b (mod a b))))
+
+
+(defn lcm
+  ([a b]
+   (if (or (zero? a) (zero? b))
+     0
+     (-> a
+         (* b)
+         (quot (gcd a b)))))
+  ([a b & more]
+   (reduce lcm (lcm a b) more)))
+
 
 (defn cycle-n
   [n seq]
@@ -64,9 +80,16 @@
   (= :variadic (arity f?)))
 
 
-
 (defn divisable? [n divisor]
   (zero? (mod n divisor)))
+
+
+(defn cart-prod [colls]
+  (if (empty? colls)
+    '(())
+    (for [more (cart-prod (rest colls))
+          x (first colls)]
+      (cons x more))))
 
 
 (defn reduplicate
@@ -79,7 +102,7 @@
     (map (fn [vals]
            (merge (zipmap coll-keys vals)
                   (select-keys m fixed-keys)))
-         (apply combo/cartesian-product coll-values))))
+         (cart-prod coll-values))))
 
 
 (defn smart-splat
@@ -123,17 +146,11 @@
     (p f arg-or-fn)))
 
 
-(defn gimme-coll
-  "If given a scalar, wrap it in the supplied collection. If given a seq, convert it to the supplied collection."
-  [col v]
-  (if (sequential? v) (into col v)
-      (conj col v)))
-
-
 (defn gimme-vec
   "If given a scalar, return a vector containing that scalar. If given a seq, convert it to a vector."
   [v]
-  (gimme-coll [] v))
+  (if (sequential? v) (into [] v)
+      (conj [] v)))
 
 
 (defn vector*

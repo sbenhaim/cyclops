@@ -121,17 +121,17 @@
     modo))
 
 
-
 (defn next-slice [delta-s len cycl]
-  (let [period    (e/period cycl)
-        from      (s->pos delta-s period)
-        to        (+ from len)
-        slc       (e/slice cycl from to {:realize? true})
-        slc       (e/offset (- from) slc)]
-    (when (seq slc)
-      (when @verbose
-        (println from to len (mapv #(select-keys % [:start :s :n]) slc)))
-      slc)))
+  (when (seq cycl)
+    (let [period (e/period cycl)
+          from   (s->pos delta-s period)
+          slc    (e/slice cycl from len :starts-during)
+          slc    (e/offset (- from) slc)
+          slc    (e/realize slc {:delta-s delta-s :cycls (s->cycles delta-s)})]
+      (when (seq slc)
+        (when @verbose
+          (println from len (mapv #(select-keys % [:start :s :n]) slc)))
+        slc))))
 
 (defn tick!
   "Shhh's heartbeat. Takes a single value `now` representing the 'ideal' execution time (to avoid drift), then:
@@ -147,14 +147,12 @@
 "
   ([]
    (reset! start-time (at/now))
-   (tick! @start-time true))
-  ([now] (tick! now false))
-  ([now once?]
+   (tick! @start-time))
+  ([now]
    (let [next-tick (+ now (* freq-s 1000))
          delta-s   (/ (- now @start-time) 1000)]
 
-     (when-not once?
-       (reset! job (at/at next-tick #(tick! next-tick) pool)))
+     (reset! job (at/at next-tick #(tick! next-tick) pool))
 
      (doseq [[orbit cycl] @layers]
        #_future

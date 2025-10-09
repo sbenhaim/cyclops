@@ -1,6 +1,100 @@
-# Cyclops Plan
+# (cyc|ops)
 
-## Architecture Considerations
+## Pre Announcement
+- [/] Shorthand
+  - [/] Vector/seq as shorthand for fit?
+	  - [ ] Do this at `pattern` or at `ops`
+	  - [ ] Or do we need it at all?
+- [/] Write tests
+- [ ] Replicate Tidal/Strudel samples
+  - [ ] Might as well document the source
+  - [ ] Determine gaps
+- [ ] Some actual music
+- [ ] Core Tidal/Strudel stuff
+  - [/] Effects
+  - [/] Oscillators
+  - [ ] Tidal/strudel reference
+  - [ ] Sample selection (:bd:2)
+  - [ ] Range scales input from, say, (range (sin) 0 500)???
+## Architecture
+- [x] Param ctrls `pan` et al
+  - [x] Are these implemented via merge or do they take multiple patterns?
+    - [a] Implemented via merge
+      - Matches Tidal
+      - Simpler
+      - Merge has to happen either way
+      - Complicates without much benefit
+- [x] Should ctrls operate on cycls rather than performing the conversion
+  - [/] Eh. Works well enough for now. Consider moving to `ops`
+  - What would this look like if at pat level but shortcutted at ops level?
+- [/] Shorthand
+  - [/] Vector/seq as shorthand for fit?
+	  - [ ] Do this at `pattern` or at `ops`
+  - [-] Ditto but splice? ;=> Same fucking thing
+  - [c] LazySeq/List as shorthand for cyc? ;=> Would confuse sequence stuff as inputs
+  - [-] Base pat for input to Ops* ;=> Per vector/seq
+## Core
+- [/] Write tests
+- [ ] Types?
+- [ ] Replicate Tidal/Strudel samples
+  - [ ] Might as well document the source
+  - [ ] Determine gaps
+- [ ] Some actual music
+## Core Features
+- [ ] scsynth startup
+- [ ] Core Tidal/Strudel stuff
+  - [/] Effects
+  - [/] Oscillators
+  - [ ] Tidal/strudel reference
+  - [ ] Sample selection (:bd:2)
+  - [ ] Range scales input from, say, (range (sin) 0 500)???
+- [ ] Docs and examples
+- [ ] Arps and arp patterns
+  - [ ] higher-order `n`s
+    - [ ] Scale-nth
+    - [ ] chord
+    - [ ] scale
+## Marketing
+- [ ] Videos
+- [ ] Announce
+- [ ] Present
+- [ ] More collection mangling/specter examples
+## Bonus Features
+- [ ] Graphics
+    - [ ] Processing
+    - [ ] Quil
+- [ ] Audio file playback
+- [/] Sampling synth with pitch control like superdough
+	- [ ] Port it to in Overtone
+- [ ] Make OSC send pluggable
+- [ ] Mini notation string
+- [ ] LLM support (LLM help docs)
+- [ ] Separate dirt add midi/osc
+- [ ] Optimize recursion
+## Ideas
+- [ ] Overdirt (Supertone?) in Overtone
+- [ ] AI composition
+- [ ] Text playback
+- [ ] Alternate method for realization?
+  - [-] Promise?
+  - [ ] @syntax?
+  - [-] https://github.com/clj-commons/manifold
+  - [ ] https://github.com/anjensan/knitty
+  - [ ] https://github.com/hoplon/javelin
+# Done
+## Architecture
+- [x] Get mixmatched pattern ops to work like Tidal?
+  - [x] How does it work when there are more args than vals? (rep [2 3] :a)
+  - [x] How does it work when there are more vals than args? (rep [2 3] :a :b :c)
+- [x] Consider defmacro vs defprotocol
+- [x] When do untimed patterns become timed cycles?
+  - [!] `->cycl` called by `ctrls` and `ops/merge` fns and `ops` convenience funs
+  - [x] And how do we make this intuitive.
+  - [p] Has to happen on merge?
+  - [c] And some pat ops - Rev implemented as Op. Ctrls should operate on ->cycls
+    - [-] Rev? (probably not, but requires multi + two impl)
+    - [x] Swing - Param ctrl
+    - [x] Dragger or Rusher, particularly rush Param ctrl
 - [c] Do I get rid of intermediate pattern representation
   - No: Has benefits for serialization and for timing implementation
 - [x] When do unrealized patterns become cycles (i.e., seq of Events)?
@@ -9,10 +103,10 @@
     - Merge def returns cycle
     - Ctrl should also always return cycle
       - [?] Can a ctrl be the child of a Op? (fit (n 123) (s 234)) "[(n 5)]"
-        - Don't think so. So ctrl :: pat => cycl [:=> [:cat pat] cycle] :where (alias pat Operatic) (alias cycle (sequence Event))
+        - [c] Don't think so. So ctrl :: pat => cycl [:=> [:cat pat] cycle] :where (alias pat Operatic) (alias cycle (sequence Event))
   - And I think that's okay
-- [ ] Should Operatic be Pattern?
-- [ ] Do we need the Cyclic protocol or even the Cycle record?
+- [c] Should Operatic be Pattern?
+- [c] Do we need the Cyclic protocol or even the Cycle record? :: Got rid of it and it works great!
   - Pro
     - Set any period we want at the cycle leve
     - We can set any metadata we want at cycle level
@@ -21,39 +115,46 @@
     - Extra data type
     - Wrapper fn around event updates
     - Built-in don't work for event seqs (without slicing first, anyway)
-- [ ] Do we need many Op records or just one?
-  - Pro
+- [p] Do we need many Op records or just one? A: Many
+  - Pro Many
     - Use Protocol, which defines things in one place
-    - Don't need op symbols
-    - Don't need multiple definition statements (or macro)
+    - Don't need op symbols or to worry about collision
+    - Don't need multiple definition statements (or macro) (i.e., define define fun and multi and etc.)
     - Each records only contains defined fields
     - Reader notation exists
-    - Name args reasonably
+    - Name args reasonably (vs `args`)
   - Cons
     - Need to define custom print method for each type (probably)
     - Simpler reader notation
     - Enforce `children` convention
     - Extra data types
-  - [ ] Operatic as protocol over multimethod
+  - [p] Operatic as protocol over multimethod
     - Pro (protocol)
       - One-step def without custom macro
+      - Cleaner record member access
     - Cons
       - Requires type per op
-- [ ] Weighty as protocol over multimethod
+- [c] Weighty as protocol over multimethod [6 to half a dozen]
   - Pro for protocol
     - Define everthing in one place (looks nicer)
     - If operatic is protocol, feels consistent
+    - Cleaner record member access
+    - Current implementation
   - Con
-    - Won't work with one Op record
+    - [-] Won't work with one Op record
     - Have to define on nil and object
-- [ ] Review arg op vs pat op dichotomy
-- [ ] Shorthand
-  - [ ] Vector/seq as shorthand for fit?
-  - [ ] Ditto but splice?
-  - [ ] LazySeq/List as shorthand for cyc?
-
-## High
-
+- [x] Review arg op vs pat op dichotomy
+- [x] Patterns within pattners
+  - [x] Seq as "default" behavior (sqeeze)
+  - [-] Simplify ops that do the following ;=> Did not reduce code. Obscured functionality.
+    - [-] Only xform children
+      - `(rep [x & kids] (fit (cycle-n x kids)))`?
+    - [-] Only manipulate weight
+    - [-] Only do both
+    - [-] Trivially derive patop from std op
+- [-] Separate ops for single vs pattern form?
+- [-] Context xf op => Tried it. Didn't look right, didn't feel right. More, not less code.
+## Core
 - [x] Get coding agents involved
 - [x] Remove order for notes when untangling loops
 - [x] Break out Ops from Pattern
@@ -62,7 +163,7 @@
 - [x] Smart splat
 - [x] Reduplicate
 - [x] > < <> Merge
-- [/] Shorter hand
+- [x] Shorter hand
   - [-] Magic n/s parsing? => No, because we need to know which is which
   - [x] Default merge (o 1 :bd :sd :sd) (o 1 [1 2 3 4] [:supersaw]) :or (o 1 [:bd :sd :sd])
 - [x] Once
@@ -91,61 +192,22 @@
 - [x] Complete ctrl testing
 - [x] Verify merge fns
 - [-] Try breaking out different merge modes => Doesn't factor out well.
-- [/] Write tests
 - [-] Try FRP => Not a good fit. Don't pursue
-- [ ] Figure out op merge pattern
-- [ ] Replicate Tidal/Strudel samples
-  - [ ] Might as well document the source
-  - [ ] Determine gaps
-- [ ] Some actual music
-- [ ] When do untimed patterns become timed cycles?
-  - [ ] And how do we make this intuitive.
-  - [ ] Has to happen on merge?
-  - [ ] And some pat ops (rev? (though a multi would fix this))
-    - [ ] Rev? (probably not, but requires multi + two impl)
-    - [ ] Swing
-    - [ ] Dragger or Rusher, particularly rush
-- [ ] scsynth startup
-- [ ] Core Tidal/Strudel stuff
-  - [/] Effects
-  - [/] Oscillators
-  - [ ] Tidal/strudel reference
-  - [ ] Sample selection (:bd:2)
-  - [ ] Range scales input from, say, (range (sin) 0 500)???
-  - [ ] Rev in strudel is recursive (or time-based)
-- [/] Sampling synth with pitch control like superdough
-- [ ] Namespace our ctrl params
-- [ ] Make OSC send pluggable
-- [ ] Docs and examples
-- [ ] Videos
-- [ ] Announce
-- [ ] Present
-    
-## Medium High
-- [ ] Get mixmatched pattern ops to work like Tidal?
-  - [ ] How does it work when there are more args than vals? (rep [2 3] :a)
-  - [ ] How does it work when there are more vals than args? (rep [2 3] :a :b :c)
-- [ ] Alternate method for realization?
-  - [-] Promise?
-  - [ ] @syntax?
-  - [-] https://github.com/clj-commons/manifold
-  - [ ] https://github.com/anjensan/knitty
-  - [ ] https://github.com/hoplon/javelin
-- [ ] Consider defmacro vs defprotocol
+- [x] Figure out op merge pattern
+- [-] Namespace our ctrl params
+## Core Features
+## Bonus Features
 
-## Medium
-- [ ] Scaling sampler in Overtone
-- [ ] Overdirt (Supertone?) in Overtone
-- [ ] More collection mangling/specter examples
-- [ ] Mini notation string
-- [ ] Arps and arp pattenrs
-- [ ] LLM support (LLM help docs)
-- [ ] AI composition
-- [ ] Audio file playback
-- [ ] Text playback
-- [ ] Graphics
-    - [ ] Processing
-    - [ ] Quil
-- [ ] Separate dirt add midi/osc
-- [ ] Optimize recursion
-      
+# Dustin IRE Epic Dude
+- [?] What services do need to be always-on?
+	- [x] Covered
+- [?] What things would need to be tested incrementally
+- [ ] How does user auth and directory syncing work?
+- [ ] What are the high-level setup for the services
+	- ODB
+	- Monitoring
+	- Hyper
+	- Inter
+	- Do these auto-scale?
+- How automated can the dr be
+-  

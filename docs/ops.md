@@ -1,20 +1,62 @@
 # Ops
+- [x] FitOp
+- [x] TimesOp
+- [x] TimesOp*
+- [x] SpliceOp
+- [x] RepOp
+- [x] RepOp*
+- [x] RevOp
+- [x] Cyclop
+- [x] MaybeOp
+- [x] MaybeOp*
+- [x] EuclidOp
+- [x] PickOp
+- [x] ElongateOp
+- [x] ElongateOp*
+- [ ] StackOp
 
-## Attributes
 
-### Loop Order
+# Sqeezers
+Fit into single segment per unit of weight
 
-How many cycles this segment repeats.
+## Naked
 
-TODO: Should be `cycle-order`?
+[Sequence]
+FitOp
 
-### Segment Order
+## Weighted Squeeze
 
-How many cycles this segment occupies.
+Elongate
+Splice = Elongate where x = 1
 
-TODO: Should be `length`?
+## xform Sqeeze
 
-### Offset Multiplier
+Times
+FitOp = TimesOp where n = 1 | RepOp where n = 1
 
-Cycle-distance between events.
+## xform weighted squeeze
 
+Rep
+
+# Stretchers
+Stretch across segments and cycles
+
+## Naked
+SlowOp
+CyclOp = SlowOp where x = sum-weights children
+
+# Post operate xf
+RevOp
+
+# Event generator
+Euclid
+Sine?
+Rand?
+
+# Fn Wrapper
+Pick
+Maybe
+
+# Heigher Order
+Stack op
+PatOps

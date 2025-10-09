@@ -3,7 +3,6 @@
    [cyclops.events :as e]
    [cyclops.pattern :as p]
                                         ;[scicloj.kindly.v4.kind :as kind]
-   [portal.viewer :as viewer]
    [cyclops.util :as u]))
 
 
@@ -16,10 +15,9 @@
 
 
 (defn vega-cycl
-  ([cycl] (vega-cycl cycl :auto))
-  ([cycl param]
-   (let [events (e/realize cycl nil)
-         param  (u/maybe-> param #{:auto} (fn [_] (auto-param events)))
+  ([events] (vega-cycl events nil))
+  ([events param]
+   (let [param  (u/maybe-> param nil? (fn [_] (auto-param events)))
          vals   (doall (for [e events :when (get e param)]
                          {:start (-> e :start float)
                           :end   (-> e e/end float)
@@ -33,7 +31,7 @@
                :encoding {:y     {:field :label :type :ordinal}
                           :x     {:field :start :type :quantitative :axis {:values (map #(-> % :start float) events)}}
                           :x2    {:field :end}
-                          :color {:field :label}}}
+                          :color {:field :label :legend nil}}}
               {:mark     {:type     :text
                           :align    :left
                           :baseline :middle
@@ -44,9 +42,8 @@
                :encoding {:y    {:field :label :type :ordinal :title nil}
                           :x    {:field :start :type :quantitative}
                           :x2   {:field :end}
-                          :text {:field :label :type :nominal}}}]})))
-
-
+                          :text {:field :label :type :nominal}
+                          :legend nil}}]})))
 
 (comment
   (require '[cyclops.ops :refer :all])

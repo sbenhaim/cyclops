@@ -2,68 +2,32 @@
   {:clj-kondo/ignore true}
   (:require
    [cyclops.pattern :as p]
-   [cyclops.events :as e :refer [events]]
-   [cyclops.music :as m :refer [chord scale]]
+   [cyclops.events :as e]
+   [cyclops.merge :as m]
    [cyclops.util :refer [toggle!] :as u]
    [cyclops.core :refer [o once sh! pause!] :as c]
    [cyclops.ops :refer :all]
    [clojure.pprint :refer [print-table]]
-   [overtone.at-at :refer [now]]))
+   [overtone.at-at :refer [now]]
+   [cyclops.music :as mu]))
 
-
-;; TODO: Is there an elegant way to apply pattern fns (slow/x) to a cycle?
-;; TODO: How to accept patterns as arguments to pattern fns?
-;; (slow [1 2 3] [:a :b :c]) == [(slow 1 :a) (slow 2 :b) (slow 3 :c)]
-;; (slow [1 2 [3 4]] (n :a :b :c))
-;; We'll need to see how tidal/strudel do it. Is this even something to support?
-;; Can pattern implement cyclic? Can cycles be events? Would they just need to implement realize-event?
-;; Realize could be polymorphic and call realize-event on events and realize-cycle on cycles, maybe.
-;; But a cycle has timing info which would need to adapt to event context.
-;; Though we do have events sending in context. Maybe it's just more offsets?
-
-(comment ;api
-  (o 1 :a :b :c) ; Not this
-  ; or
-  (o 1 (n :a :b :c) (s :supersaw))
-  (->> [:a :b :c] n (o 1 (s :supersaw)))
-
-  (o 1 (n (sin 50 100 3)) (s :supersaw))
-
-  (o 1 (s :bd :sd :sd) (x [3 2 3])) ; => "bd!3 sd!2 sd!3" => ctrl + single arg representing params is a partial
-
-  ; or we just use threading
-  (o 1 (->> (s :bd :sd :sd) (x [3 2 3])))  (->> [:bd :sd :sd] s (x [3 2 3]) (o 1))
-  ; NOTE: This one
-
-  ; Do I support
-  (+| [1 2 3] [4 5 6]) ; <= Requires either that seqs/patterns implement Cyclic or
-                                        ; that merge be polymorphic and support patterns
-                                        ; or that we use pattern specific merge conditionals (probably a bad idea)
-                                        ; or that we somehow convert patterns to cycles somewhere
-                                        ; Maybe not crazy that patterns can become cycles?
-                                        ; Advantage: Create a general pattern and then assign it to a ctrl
-                                        ; Stretch goal
-
-  (+| (n 1 2 3) [4 5 6]) ; <= easy to type, requires some hidden assumptions,
-  ; like that unassigned values merge with any or certain or the first existing
-  ; param? Frankly don't like it
-  ; => #Event{:n 1 :init 4}
-
-  ; or require
-  (+| (n 1 2 3) (n 4 5 6)) ; <= simple and clear and easier to implement
-  ; This one plus stretch goal
-  )
 
 ;; (mixer/boot-server-and-mixer)
 (c/start!)
 (c/shutdown!)
 
-(once (n (range 60 64)) (s :superpiano))
+(mu/scale :c :minor)
+
+(o 2 (+| (n (->> (mu/scale :c :minor :o 2 :incl 2) (slow 2))) (s :supermandolin) (room 2)))
+
+(o 2 nil)
+
+
 
 (once
  (s|
   (+| (s :superpiano) (n (range 60 64)) (pan 0))
-  (+| (s :superpiano) (rev-cycl (n (range 60 64))) (pan 1))))
+  (+| (s :superpiano) (rev (n (range 60 64))) (pan 1))))
 
 
 (evts
@@ -79,12 +43,14 @@ evts
 (evts
  (s| (+| (n 10) (s :supermandolin) (pan 0)) (+| (n 20) (s :superpiano) (pan 1))))
 
-(events
+(evts
  (+| (range 10) (range 10)))
 
 
+(reset! c/cps 1) ;; TODO: Why doesn't this work.
+
 (pause!)
-(->> (x 2 :bd :hh :sd :hh)  s once)
+(->> (x 1 :bd :hh :sd :hh) s (o 1))
 
 (e/events
  (f| Math/round
@@ -137,7 +103,7 @@ evts
 (c/send-dirt {:s :supermandolin :n 66})
 
 
-(o 0 (|+| (n* (e/sin 60 70) (e/sin 60 70) (e/sin 60 70) (e/sin 60 70)) (s* :supersaw)))
+(o 0 (|+| (n (sin 60 70) (sin 60 70) (sin 60 70) (sin 60 70)) (s :supersaw)))
 
 
 (e/slice
@@ -166,7 +132,7 @@ evts
 
 (reset! c/cps 1) ;; TODO: Why does changing this break stuff?
 
-(o 0 (n (x 2 :c :a :f :e)) (s :superpiano) (pan (e/sin)))
+(o 0 (n (x 2 :c :a :f :e)) (s :superpiano) (pan (sin)))
 (c/shutdown!)
 
 
@@ -174,28 +140,15 @@ evts
  (s (slow 2 (rep 8 :bd)))
  (pan (slow 2 (rep 8 0 1))))
 
-(e/slice
- (pan
-  (e/sin 0 1 1))
- 0 1 {:realize? true})
-
-
-(e/cycle-events 1 (p/process-pattern [(e/sin 0 1 1)]))
-
 
 
 (once
- (|s|  (n :c) (n :e) (n :g) (s :supermandolin) (s :supersaw)))
+ (s| (n :c) (n :e) (n :g) (s :supermandolin) (s :supersaw)))
 
 
-(e/events
- (|s| (n :c) (n :e) (n :g) (s :supersaw) (s :supermandolin))
- true)
+(c/restart!)
 
-
-(e/slice )
-
-(once (->> (n (chord :cm7 :o 3 :incl 1)) (juxt rev)) (s :supermandolin))
+(o 3 (->> (n (chord :cm7 :o 3 :incl 1)) ) (s :supermandolin))
 
 (once (+| (n :c2 :eb3 :g3 [:bb3 :c4])) (s :superpiano))
 
@@ -212,28 +165,29 @@ evts
 
 ;; d2 $ s "[~ hh]*2"
 
-(o 2 (s (rep 2 [nil :hh])))
+(o 2 (s (rep 2 [:- :hh])))
 (->> [:- :hh] (rep 2) s (o 2))
 
 
 ;; d3 $ s "numbers:1"
-(o 3 (+| (n 1) (s :numbers)))
+(o 3 (+| (n (fit (range 9))) (s :numbers)))
+(c/restart!)
 (o 3 (n 1) (s :numbers))
 (o 3 (m| (n 1) (s :numbers)))
 
 (->> :numbers s (m| (n 1)) (o 3))
 
 ;; TODO
-(o 3 (s :numbers:1))
+(o 3 (s :numbers))
 
 ; d4 $ s "cp cp cp"
 
-(o 4 (s :cp :cp :cp))
+(o 1 (s :cp :cp :cp))
 
 ; d1 $ sound "drum" |+| n "1 2 3"
 
 (o 1 (s :drum) (n 1 2 3)) ;; Implicit
-(o 1 (m| (s :drum) (n 1 2 3))) ;; Explicit
+(o 1 (s| (s :drum) (n 1 2 3))) ;; Explicit
 (->> [1 2 3] n (m| (s :drum)) (o 1)) ;; Thread
 
 
@@ -243,7 +197,10 @@ evts
 
 ;; d1 $ sound "bd*8" # pan sine
 
-(o 1 (s (x 8 :bd)) (pan (sin))) ;; TODO: Just pass the var? i.e., (pan sin)
+(o 1 (s (x 4 :bd)) (pan (sin 0 1 1/4))) ;; TODO: Just pass the var? i.e., (pan sin)
+
+(c/restart!)
+(c/shutdown!)
 
 ;; d1 $ sound "bd*8" # pan cosine # speed (sine + 0.5)
 
