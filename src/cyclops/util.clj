@@ -84,10 +84,10 @@
   (zero? (mod n divisor)))
 
 
-(defn cart-prod [colls]
+(defn cartesian-prod [colls]
   (if (empty? colls)
     '(())
-    (for [more (cart-prod (rest colls))
+    (for [more (cartesian-prod (rest colls))
           x (first colls)]
       (cons x more))))
 
@@ -98,11 +98,11 @@
   [m]
   (let [coll-keys (filter #(coll? (% m)) (keys m))
         fixed-keys (remove #(coll? (% m)) (keys m))
-        coll-values (map m coll-keys)]
+        coll-values (map #(% m) coll-keys)]
     (map (fn [vals]
            (merge (zipmap coll-keys vals)
                   (select-keys m fixed-keys)))
-         (cart-prod coll-values))))
+         (cartesian-prod coll-values))))
 
 
 (defn smart-splat

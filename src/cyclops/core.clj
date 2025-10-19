@@ -105,9 +105,13 @@
 
 
 (defn apply-timing
-  [slc cycle-num]
-  (map #(assoc % :trigger-at (*clock* (+ cycle-num (:start %))))
-       slc))
+  ([slc]
+   (let [now (at/now)]
+     (map #(assoc % :trigger-at (-> % :start pos->s (* 1000) (+ now)))
+          slc)))
+  ([slc cycle-num]
+   (map #(assoc % :trigger-at (*clock* (+ cycle-num (:start %))))
+        slc)))
 
 
 (defn tick
@@ -117,7 +121,8 @@
      #_future
      (let [slc (get-slice cycl cycle-num)
            slc (apply-timing slc cycle-num)
-           ctx {:cycle-num cycle-num :layer layer}]
+           ctx {:cycle-num cycle-num :layer layer}
+           slc (e/realize slc ctx)]
        (when (and (not @sh) (seq slc))
          (dispatch* slc ctx))))
    (let [next-cycle (+ cycle-num tick-dur)
@@ -229,6 +234,9 @@
   [n & cyc]
   (swap! layers assoc n (hoist-merge cyc)))
 
+
+(defn now! [& cyc]
+  (-> cyc hoist-merge ops/evts apply-timing (dispatch* {})))
 
 
 (defn once [& cyc]

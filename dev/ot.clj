@@ -14,13 +14,16 @@
   (f)
   (Thread/sleep 250))
 
-(piano 440)
+(piano 60)
 
-(sampled-piano 60 )
+(event :note :instrument sampled-piano :midinote 60 :release 4)
+
+(sampled-piano 60)
 
 
 
-(def nome (r/metronome 120))
+(def nome 
+(r/metronome 120))
 
 (nome)
 
@@ -89,8 +92,65 @@
 :clock, :beat, :dur, :start-time, :end-time
 
 (let [clock (metronome 120)]
-  (dotimes [i 3]
-    (event :note {:instrument sampled-piano
-                  :clock clock
-                  :beat (+ 0 (clock))
-                  :dur 2})))
+  (doseq [b (range 4)]
+    (at (clock b) (kick))
+    (at (clock (+ b 1/2)) (kick2))))
+
+overtone.studio.transport/*clock*
+
+(overtone.studio.mixer/)
+
+(metro-start )
+
+(kick)
+
+(tap> 1)
+(:instruments @studio*)
+:dbg
+*clock*
+
+(event :note :instrument overtone.inst.drum/snare2)
+
+(require '[overtone.inst.drum :as d])
+
+(let [clock (metronome 120)]
+  (doseq [b (range 10)]
+    (event :note :instrument d/snare :clock nil :beat b)))
+
+
+(require '[overtone.studio.transport :refer [*clock*]])
+
+(at (t/*clock* (+ (t/*clock*) 20)) #(println "h1llo"))
+
+(at (+ (t/*clock*) 10))
+
+[(t/*clock* (t/*clock*)) (t/*clock* (+ (t/*clock*) 10))]
+
+
+(let [b (t/*clock*)]
+  (apply-by (t/*clock* (+ b 3)) #(println "hello")))
+
+
+
+
+(defn metro-tick
+  []
+  (let [n ()]))
+
+
+(metro-start *clock* 0)
+(metro-bpm *clock* 60)
+
+(metro-tick!)
+
+(do
+  (defn metro-tick!
+    []
+    (let [cycl (*clock*)]
+      (event :note :instrument kick :beat cycl :clock *clock*)
+      ;; (apply-at (*clock* (+ cycl 1/2)) #(kick2))
+      (event :note :instrument kick2 :start-time (*clock* (+ cycl 1/2)))
+      ;; (event :note :instrument kick2 :beat (+ cycl 1/2) :clock *clock*)
+      (apply-by (*clock* (inc cycl)) #'metro-tick!))))
+
+(defn metro-tick! [])

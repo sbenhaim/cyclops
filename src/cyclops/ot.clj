@@ -13,10 +13,12 @@
 (defn load-sounds
   []
   (require '[overtone.inst.drum :refer :all])
+  (require '[overtone.synth.stringed :refer [guitar ektara]])
+  (require '[overtone.inst.synth :refer [ks-stringer]])
   (require '[overtone.inst.sampled-piano :refer [sampled-piano]]))
 
 (comment (load-sounds)
-         (dub-kick))
+         (ks-stringer :dur 1))
 
 
 (def dirt-map
@@ -27,6 +29,8 @@
    "oh" open-hat
    "hh" hat-demo
    "piano" sampled-piano
+   "superpaino" sampled-piano
+   "supermandolin"
    "cp" clap})
 
 
@@ -36,6 +40,7 @@
       (assoc :clock *clock*)
       (assoc :beat (+ cycl-num (evt :start)))
       (assoc :midinote (:n evt))
+      (assoc :dur 1/2)
       (assoc :instrument (dirt-map (evt :s)))))
 
 
