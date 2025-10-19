@@ -96,8 +96,8 @@
   "Convert a map with collections for some of the keys into a list of maps with scalar keys.
   NOTE: List grows combinatorily."
   [m]
-  (let [coll-keys (filter #(coll? (m %)) (keys m))
-        fixed-keys (remove #(coll? (m %)) (keys m))
+  (let [coll-keys (filter #(coll? (% m)) (keys m))
+        fixed-keys (remove #(coll? (% m)) (keys m))
         coll-values (map m coll-keys)]
     (map (fn [vals]
            (merge (zipmap coll-keys vals)

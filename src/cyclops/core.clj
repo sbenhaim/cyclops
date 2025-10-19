@@ -1,12 +1,15 @@
 (ns cyclops.core
-  "((((Tidal wave of parens))))"
+  "((((Tidal Wave of Parens))))"
   (:require
-   [overtone.osc :as osc]
    [overtone.at-at :as at]
    [cyclops.events :as e]
    [cyclops.util :refer [reduplicate]]
    [cyclops.ops :as ops]
-   [cyclops.core :as c]))
+   [cyclops.core :as c]
+   [overtone.studio.transport :refer [*clock*]]
+   [overtone.music.rhythm :as metro]
+   [overtone.music.time :refer [apply-by]]))
+
 
 ;; Constants
 
@@ -14,7 +17,10 @@
 (def default-host "localhost")
 (def default-cps 1)
 (def default-latency-s 0.1)
-(def freq-s 1/10)
+(def tick-dur 1/10)
+
+(defn cps->bpm [cps]
+  (* cps 60))
 
 ;; Mutables
 
@@ -30,70 +36,34 @@
 
 (def layers (atom {}))
 
+
+(defmulti dispatch :target)
+
+
+(def defaults (atom {:target :default}))
+
+
+(defn dispatch*
+  [evts ctx]
+  (doseq [es evts]
+    (doseq [e (reduplicate es)]
+      (dispatch (merge @defaults ctx e)))))
+
+
+(defmethod dispatch :default
+  [{:keys [start-time] :or {start-time 0} :as evt}]
+  (at/at start-time
+         #(let [r (e/realize evt evt)]
+            (println r))
+         pool))
+
+
+(comment
+  (dispatch {:params {:init (rand)} :start-time (+ 1000 (at/now))})
+  (dispatch* [{"s" "bd"}] {}))
+
+
 ;; Dirt
-
-(def allowed-keys
-  #{:_id_ :s :cps :cycle :delta :room :size :orbit :pan :n :latency})
-
-(def default-event
-  {:_id_ (int 1)
-   :s nil
-   :cps (float default-cps)
-   :cycle 0.0
-   :delta 0.5
-   :room 0.0
-   :size 0.0
-   :orbit (int 0)
-   :pan 0.5
-   :n (int 0)
-   :latency default-latency-s})
-
-(declare pos->s)
-
-(defn create-event
-  [{:keys [start length]
-    :or   {start  0.0
-           length 1/2}
-    :as   event-map}]
-  (let [event (-> event-map
-                  (update :delta #(or % (pos->s (* length))))
-                  (update :s #(if (fn? %) (name (%)) (name %))))]
-    (-> default-event
-        (merge event)
-        (update :latency #(+ % start))
-        (select-keys allowed-keys))))
-
-
-(def osc-client (atom nil))
-
-(defn send-event
-  [event-map]
-  (when @debug-osc (println event-map))
-  (try
-    (apply osc/osc-send @osc-client
-           "/dirt/play"
-           (mapcat (fn [[k v]] [(name k) (if (number? v) (float v) v)]) event-map))
-    (catch Exception e
-      (println (str "OSC ERROR: " (.getMessage e))))))
-
-
-(defn send-dirt
-  [event-map]
-  (when (:s event-map)
-    (send-event (create-event event-map))))
-
-(comment (send-event {:s nil :start 0 :period 1}))
-
-(defn throw-dirt
-  ([evts] (throw-dirt 0.0 evts))
-  ([orbit evts]
-   (doseq [e evts]
-     #_future
-     (doseq [es (reduplicate e)]
-       (send-dirt (assoc es :orbit (float orbit)))))))
-
-
-;; Events, cycles loops
 
 
 (defn s->cycles
@@ -102,9 +72,10 @@
   (* s @cps))
 
 
+
 (comment
   (reset! cps 1/2)
-  (s->cycles 2))
+  (s->cycles 2.517))
 
 
 (defn pos->s
@@ -121,48 +92,51 @@
     modo))
 
 
-(defn next-slice [delta-s len cycl]
+(defn get-slice [cycl cycle-num]
   (when (seq cycl)
     (let [period (e/period cycl)
-          from   (s->pos delta-s period)
-          slc    (e/slice cycl from len :starts-during)
-          slc    (e/offset (- from) slc)
-          slc    (e/realize slc {:delta-s delta-s :cycls (s->cycles delta-s)})]
+          from   (mod cycle-num period)
+          slc    (e/slice cycl from tick-dur :starts-during)
+          slc    (e/offset (- from) slc)]
       (when (seq slc)
         (when @verbose
-          (println from len (mapv #(select-keys % [:start :s :n]) slc)))
+          (println from 1 (mapv #(select-keys % [:start :s :n]) slc)))
         slc))))
 
-(defn tick!
-  "Shhh's heartbeat. Takes a single value `now` representing the 'ideal' execution time (to avoid drift), then:
 
-  - Schedules itself for `now` plus `freq-s` (`next-tick`)
-  - Calculates time since start of looping
-  - Calculates events that should be scheduled between `now` and `next-tick` for each loop period (`slice`)
-  - Sends the OSC messages for slices.
+(defn apply-timing
+  [slc cycle-num]
+  (map #(assoc % :trigger-at (*clock* (+ cycle-num (:start %))))
+       slc))
 
-  NOTE: Start is currently calculated per period, which seems redundant, but
-  cycling the loops and maintaining and single period is probably worse for
-  performance.
-"
-  ([]
-   (reset! start-time (at/now))
-   (tick! @start-time))
-  ([now]
-   (let [next-tick (+ now (* freq-s 1000))
-         delta-s   (/ (- now @start-time) 1000)]
 
-     (reset! job (at/at next-tick #(tick! next-tick) pool))
+(defn tick
+  ([] (tick (*clock*)))
+  ([cycle-num]
+   (doseq [[layer cycl] @layers]
+     #_future
+     (let [slc (get-slice cycl cycle-num)
+           slc (apply-timing slc cycle-num)
+           ctx {:cycle-num cycle-num :layer layer}]
+       (when (and (not @sh) (seq slc))
+         (dispatch* slc ctx))))
+   (let [next-cycle (+ cycle-num tick-dur)
+         next-tick  (*clock* next-cycle)]
+     (reset! job
+             (apply-by next-tick #(tick next-cycle))))))
 
-     (doseq [[orbit cycl] @layers]
-       #_future
-       (let [slc (next-slice delta-s (s->cycles freq-s) cycl)]
-         (when (and (not @sh) (seq slc))
-           (throw-dirt orbit slc)))))))
+
+(comment
+  (reset! layers {0 [{:start 0 :length 1 :period 2 :params {:init :a}}]})
+  (reset! layers {0 []})
+  (metro/metro-bpm *clock* 60)
+  (tick)
+  (at/kill @job))
+
 
 ;; Controls
 
-(defn init-client!
+#_(defn init-client!
   "Creates an osc client if one doesn't exist."
   ([] (init-client! default-port))
   ([port] (init-client! default-host port))
@@ -177,12 +151,16 @@
   (println "---PAUSED---"))
 
 
+(comment (pause!))
+
+
 (defn continue!
   "unpauses"
   []
   (when (nil? (at/scheduled-jobs pool))
-    (tick! (at/now))))
+    (tick)))
 
+(comment (continue!))
 
 (defn sh!
   "Stops sending events, but continues processing them."
@@ -202,7 +180,7 @@
 
 
 (defn start!
-  "Starts/restarts Shhh.
+  "Starts/restarts.
 
   - Inits OSC client if it hasn't been.
   - Sets `stop` to false
@@ -213,10 +191,14 @@
 
   []
   (at/kill @job)
-  (init-client!)
   (speak!)
-  (reset! start-time (at/now))
-  (tick! @start-time))
+  (metro/metro-bpm *clock* (cps->bpm @cps))
+  (metro/metro-start *clock* 0)
+  (tick 0))
+
+(comment
+  (metro/metro-start *clock* 0)
+  (start!))
 
 
 (defn restart!
@@ -250,4 +232,4 @@
 
 
 (defn once [& cyc]
-  (throw-dirt (ops/evts (hoist-merge cyc))))
+  (-> cyc hoist-merge ops/evts (apply-timing (*clock*)) (dispatch* {})))

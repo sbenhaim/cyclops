@@ -34,11 +34,14 @@
     (compare [(:start this) (:length this)] [(:start that) (:length that)]))
   DoYouRealize?
   (realize [this ctx]
-    (let [base     (select-keys this #{:start :length})
-          ctx      (assoc ctx :event this)
-          realized (into {} (for [[k v] params] [k (realize v (assoc ctx :param k))]))]
-      (merge base realized))))
+    (let [realized (into {} (for [[k v] params] [k (realize v (assoc ctx :param k))]))]
+      (assoc this :params realized))))
 
+
+(comment
+  (realize (->event #(rand) 0 1/2 1) nil)
+  (event?
+   (realize (->Event {:init #(rand) :else 5 :ctx identity} 0 1/2 1) nil)))
 
 (defn event? [event?]
   (instance? Event event?))
@@ -99,7 +102,7 @@
 
 (defn cycl?
   [v]
-  (every? event? v))
+  (every? (juxt :period :start :length) v))
 
 
 (defn period

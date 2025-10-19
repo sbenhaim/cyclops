@@ -20,6 +20,7 @@
 
 
 (comment (evts [:a :b :c]))
+(comment (evts (n :a :b :c)))
 
 
 (defmethod evts cyclops.pattern.Operatic [op]
@@ -261,7 +262,7 @@
 
 
 (comment
-  (-> (s :c :a :f :e) rev view)
+  (-> (s :c :a :f :e) rev evts)
   (-> [(stack :c :d) :a :f :e] s (view :s))
   (view (s (rep 2 :sd :bd))))
 
@@ -470,12 +471,18 @@
   ([max] (sin 0 max 1))
   ([min max] (sin min max 1))
   ([min max period]
-   (fn [_ {:keys [event]}]
+   (fn [_ {:keys [event cycls]
+           :or {cycls 0}}]
      (let [TAU  (* 2 Math/PI)
            mult (-> max (- min) (/ 2))
-           base (-> (:start event) (* TAU) (/ period) Math/sin (+ 1) (* mult))
+           base (-> (+ cycls (:start event)) (* TAU) (/ period) Math/sin (+ 1) (* mult))
            n    (+ base min)]
        n))))
+
+
+(comment
+  (let [s (sin 0 1 2)]
+    (s nil {:event {:start 0} :cycls 1.5})))
 
 
 (defn rand

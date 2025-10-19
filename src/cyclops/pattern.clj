@@ -135,9 +135,7 @@
 
 (defn op-merge
   "Given a fn that applies an operator to a single arg, a arg Pattern and a
-  value pattern, operates on the merge of arguments with values.
-
-  TODO: Don't love this here. Maybe this is an op thing? Higher-order op interface creation?"
+  value pattern, operates on the merge of arguments with values."
   [->op arg-pat val-pat]
   (if (= 1 (count arg-pat))
     (->op (first arg-pat) (->cycl val-pat))

@@ -1,11 +1,47 @@
 # (cyc|ops)
 
 ## Pre Announcement
-- [/] Shorthand
-  - [/] Vector/seq as shorthand for fit?
-	  - [ ] Do this at `pattern` or at `ops`
-	  - [ ] Or do we need it at all?
+- [x] Shorthand
+  - [x] Vector/seq as shorthand for fit?
+	  - [x] Do this at `pattern` or at `ops`: Keep it at pattern till it causes a problem
+	  - [x] Or do we need it at all?: Yes, improves the coding ergonomics, and has not yet caused issues
 - [/] Write tests
+- [ ] *Minimal* Overtone interop
+	- [ ] Make a decision on (metro)
+	- [ ] Formalize dynamic dispatch
+        - [ ] Default thing that's just going to call fns with context of values that are fns
+        - [ ] Concepts of "outputs" (which will be orbits for Dirt and who knows for Overtone)
+        - [ ] osc stuff should move to dirt namespace
+	- Core functionality
+	  - Events encapsulates timing and context
+	  - Mergey stuff including param merging, maths, and applications
+	  - Value is ANYTHING
+	  - Timing and slices
+	  - Orbit grouping
+	  - Dispatch
+		  - Attaches play start/len/stop
+		  - Attaches context
+		  - [?] Event or slice?
+	  - Reduplication?
+		  - Or is this post-dispatch
+	- Dynamic dispatch methods
+		- Custom
+			- Get some events and do something with them
+			- (Likely schedule and send them somewhere)
+		- Dirt
+			- Converts to dirt message and latency and sends
+		- Overtone
+			- Converts to overtone timed event
+			- You do the rest!
+		- OSC
+			- Sends arbitrary osc messages
+		- MIDI
+			- Sends midi messages
+		- Overdirt (roadmap)
+			- Supports dirty features via overtone interface (events/synths/etc)
+		- Superdough
+			- Some sort of JS integration
+	- [>] See about starting scsynth and getting the stuff
 - [ ] Replicate Tidal/Strudel samples
   - [ ] Might as well document the source
   - [ ] Determine gaps
@@ -27,9 +63,9 @@
 - [x] Should ctrls operate on cycls rather than performing the conversion
   - [/] Eh. Works well enough for now. Consider moving to `ops`
   - What would this look like if at pat level but shortcutted at ops level?
-- [/] Shorthand
-  - [/] Vector/seq as shorthand for fit?
-	  - [ ] Do this at `pattern` or at `ops`
+- [] Shorthand
+  - [x] Vector/seq as shorthand for fit?
+	  - [x] Do this at `pattern` or at `ops`
   - [-] Ditto but splice? ;=> Same fucking thing
   - [c] LazySeq/List as shorthand for cyc? ;=> Would confuse sequence stuff as inputs
   - [-] Base pat for input to Ops* ;=> Per vector/seq

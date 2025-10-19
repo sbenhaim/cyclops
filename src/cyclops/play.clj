@@ -5,29 +5,43 @@
    [cyclops.events :as e]
    [cyclops.merge :as m]
    [cyclops.util :refer [toggle!] :as u]
-   [cyclops.core :refer [o once sh! pause!] :as c]
+   [cyclops.core :as c :refer [o once sh! pause! now!]]
    [cyclops.ops :refer :all]
    [clojure.pprint :refer [print-table]]
    [overtone.at-at :refer [now]]
    [cyclops.music :as mu]))
 
 
+
+(swap! c/defaults assoc :target :dirt)
+
+(c/speak!)
 ;; (mixer/boot-server-and-mixer)
 (c/start!)
 (c/shutdown!)
+(c/metro)
 
 (mu/scale :c :minor)
 
 (o 2 (+| (n (->> (mu/scale :c :minor :o 2 :incl 2) (slow 2))) (s :supermandolin) (room 2)))
 
+(c/start!)
+(c/clear-pattern!)
+(o 2 (s :bd))
+(once (s :hh :sd))
+(now! (s :hh :sd))
+
 (o 2 nil)
 
+(once (s (cyc :bd :sd :bd :sd)))
 
+(o 0 (s :bd :sd :bd :sd))
+(o 0 nil)
 
 (once
  (s|
-  (+| (s :superpiano) (n (range 60 64)) (pan 0))
-  (+| (s :superpiano) (rev (n (range 60 64))) (pan 1))))
+  (+| (s :piano) (n (range 60 64)) (pan 0))
+  (+| (s :piano) (rev (n (range 60 64))) (pan 1))))
 
 
 (evts
@@ -37,11 +51,13 @@
 (evts
  (rev (s :superpiano)))
 
-evts
-(+| (s :superpiano) (n (range 60 64)) (pan 1))
+(o 0
+   (+| (s :piano) (n (range 60 64)) (pan 1)))
 
-(evts
- (s| (+| (n 10) (s :supermandolin) (pan 0)) (+| (n 20) (s :superpiano) (pan 1))))
+(o 0 nil)
+
+(once
+ (s| (+| (n 10) (s :) (pan 0)) (+| (n 20) (s :superpiano) (pan 1))))
 
 (evts
  (+| (range 10) (range 10)))
