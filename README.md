@@ -149,6 +149,17 @@ A recreation of the Tidal/Strudal mini notation.
 
 Operations applied to one or more events affecting timing or other attributes.
 
+### Op Types
+
+- Op: fit, cyc
+- Op*: cyc* , rep*
+- OpTx?: range
+- Ctrl: n, s
+- Cycl: [evt...]
+- CyclTx: cycl -> cycl
+- Merge: [cycl...] -> cycl
+- CtxFn: i ctx -> value
+
 ## Pattern Notation
 
 Definition of patterns via pattern functions (representing ops), and events in shorthand notation or event maps.

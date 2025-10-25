@@ -109,4 +109,4 @@
 (def =>OpTx
   (m/schema
    [:function
-    [:=> [:cat :sequential ]]]))
+    [:=> [:cat :sequential TOp]]]))

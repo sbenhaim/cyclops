@@ -95,9 +95,11 @@
           :else cyc))
       (throw (ex-info "Scale not found" {:scale-name scale-name})))))
 
-(comment
-  (butlast (-scale :c0 :blarg))
-  (println
-   (pr-str
-    (scale :c-1 :minor-pentatonic)))
-  )
+
+(defn scale-nth
+  [root scale-name]
+  (fn [v]
+    (let [notes (butlast (-scale root scale-name))]
+      (if (seq notes)
+        (nth (cycle+12 notes) (or v 0))
+        (throw (ex-info "Scale not found" {:scale-name scale-name}))))))
