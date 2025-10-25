@@ -92,7 +92,7 @@
       (cons x more))))
 
 
-(defn reduplicate
+#_(defn reduplicate
   "Convert a map with collections for some of the keys into a list of maps with scalar keys.
   NOTE: List grows combinatorily."
   [m]
@@ -103,6 +103,45 @@
            (merge (zipmap coll-keys vals)
                   (select-keys m fixed-keys)))
          (cartesian-prod coll-values))))
+
+
+(defn na-coll? [c]
+  (and (coll? c) (not (map? c))))
+
+
+(comment
+  (na-coll? [])
+  (na-coll? '())
+  (na-coll? #{})
+  (na-coll? {})
+  )
+
+
+(defn reduplicate
+  "Convert a map with collections for some of the keys into a list of maps with scalar keys.
+  NOTE: List grows combinatorily."
+  [m]
+  (let [ ;; First, recursively process any nested maps
+        processed-m (into {}
+                          (map (fn [[k v]]
+                                 (if (map? v)
+                                   [k (reduplicate v)]
+                                   [k v]))
+                               m))
+        ;; Identify keys with sequential collections (not maps)
+        is-seq-coll? #(and (coll? %) (not (map? %)))
+        coll-keys (filter #(na-coll? (processed-m %)) (keys processed-m))
+        fixed-keys (remove #(is-seq-coll? (processed-m %)) (keys processed-m))
+        coll-values (map processed-m coll-keys)]
+    (map (fn [vals]
+           (merge (zipmap coll-keys vals)
+                  (select-keys processed-m fixed-keys)))
+         (cartesian-prod coll-values))))
+
+
+(comment
+  (reduplicate {:a {:b [:c :d]}}))
+
 
 
 (defn smart-splat
@@ -146,6 +185,8 @@
     (p f arg-or-fn)))
 
 
+
+
 (defn gimme-vec
   "If given a scalar, return a vector containing that scalar. If given a seq, convert it to a vector."
   [v]
@@ -158,10 +199,27 @@
   [& stuff]
   (->> stuff vec flatten (into [])))
 
-
 (comment
   (vector* :a)
   (vector* :a [:b] '(:c :d [:e :f])))
+
+(defn set*
+  [& stuff]
+  (reduce
+   (fn [set i]
+     (if (set? i)
+       (into set i)
+       (conj set i)))
+   #{}
+   stuff))
+
+
+
+(comment
+  (set* :a :b :c)
+  (set* #{:a :b} :c)
+  (set* :a #{:b :c})
+  (set* #{:a :b} #{:c}))
 
 
 (defn num-enough? [& ns?]
@@ -191,6 +249,7 @@
     (cond
       (vector? v) (mapv f v)
       (sequential? v) (map f v)
+      (set? v) (map f v)
       :else (f v))))
 
 

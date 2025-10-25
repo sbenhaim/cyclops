@@ -20,7 +20,7 @@
   (realize [this ctx]
     (case (arity this)
       0 (realize (this) ctx)
-      1 (realize (this ctx) ctx)
+      1 (realize (this nil) ctx)
       2 (realize (this nil ctx) ctx)
       this)) ; Or (defer this ctx)?
 
@@ -34,7 +34,7 @@
     (compare [(:start this) (:length this)] [(:start that) (:length that)]))
   DoYouRealize?
   (realize [this ctx]
-    (let [realized (into {} (for [[k v] params] [k (realize v (assoc ctx :param k))]))]
+    (let [realized (into {} (for [[k v] params] [k (realize v (assoc ctx :param k :event this))]))]
       (assoc this :params realized))))
 
 
@@ -43,8 +43,15 @@
   (event?
    (realize (->Event {:init #(rand) :else 5 :ctx identity} 0 1/2 1) nil)))
 
-(defn event? [event?]
-  (instance? Event event?))
+(defn event? [evt?]
+  ((every-pred :period :start :length) evt?))
+
+
+(comment
+  (event? (->Event {:init :hi} 0 1 1))
+  (event? (->event :hi 0 1 1))
+  (event? {:period 1 :start 1 :length 1})
+  (event? {:period 1 :start 1}))
 
 
 (defn defer+realize
@@ -102,7 +109,12 @@
 
 (defn cycl?
   [v]
-  (every? (juxt :period :start :length) v))
+  (and (coll? v)
+       (every? event? v)))
+
+(comment
+  (cycl? [{:start 0 :period 1 :length 5}])
+  (cycl? [{:start 0 :period 1}]))
 
 
 (defn period

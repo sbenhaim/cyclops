@@ -5,4 +5,5 @@
                          quil/quil {:mvn/version "4.3.1563"}
                          org.clj-commons/claypoole {:mvn/version "1.2.2"}
                          metosin/malli {:mvn/version "0.19.1"}
-                         com.fulcrologic/guardrails {:mvn/version "1.2.9"}}}}}
+                         com.fulcrologic/guardrails {:mvn/version "1.2.9"}
+                         mount/mount {:mvn/version "0.1.23"}}}}}

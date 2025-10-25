@@ -1,4 +1,5 @@
 (ns cyclops.ops
+  "Not simple :(. But easy!"
   (:require
    [cyclops.pattern :as p]
    [cyclops.util :as u :refer [smart-splat collate]]
@@ -66,9 +67,11 @@
   (->op p/->TimesOp* n-pat children))
 
 
+
 (comment
 
   (evts (x 2 :a))
+  (evts (s (x 2 :a)))
   (->> [:a :b] (x 2) evts)
   (->> [:a (x 2 :b) :c] evts)
   (->> [:a :b] (x [2 2]) evts)
@@ -268,10 +271,28 @@
 
 
 (defn n
+  "Numbers"
+  [& pat]
+  (p/->ctrl :n float (smart-splat pat)))
+
+
+(defn mnt
+  "Numbers"
+  [& pat]
+  (p/->ctrl :note p/parse-note (smart-splat pat)))
+
+
+(defn nt
+  "Numbers"
+  [& pat]
+  (p/->ctrl :note #(- (p/parse-note %) 60) (smart-splat pat)))
+
+
+
+(defn n
   "Numbers and notes."
   [& pat]
-  (p/->ctrl :n p/parse-num (smart-splat pat)))
-
+  (p/->ctrl :n identity (smart-splat pat)))
 
 
 (comment
@@ -287,6 +308,12 @@
   "Left 0.0, Right 1.0"
   [& pat]
   (p/->ctrl :pan #(-> % (min 1) (max 0) float) (smart-splat pat)))
+
+
+(defn speed
+  "Left 0.0, Right 1.0"
+  [& pat]
+  (p/->ctrl :speed float (smart-splat pat)))
 
 
 (defn vowel
@@ -323,20 +350,27 @@
   (p/->ctrl :legato float (smart-splat pat)))
 
 
-(defn hoist [cycls]
+#_(defn hoist [cycls]
   (map #(if-not (e/cycl? %) (p/->cycl %) %) cycls))
 
+
+(defn hoist* [cycls]
+  (map p/hoist cycls))
+
+
 (comment
-  (hoist [[:a :b :c] (cyc 1 2 3) [(e/->event :a 0 1 1)]]))
+  (hoist* [[:a :b :c] (cyc 1 2 3) [(e/->event :a 0 1 1)] :a]))
 
 
 (defn f| [f & cycls]
-  (m/merge-cycles* f (-> cycls hoist))) ;; <- TODO: Should we smart splat?
+  (m/merge-cycles* f (-> cycls hoist*))) ;; <- TODO: Should we smart splat?
 
 
 (comment
 
   (-> (f| m/left-merge (s :a) (s :b)) evts)
+  (-> (f| m/left-merge [:a] [:b]) evts)
+  (-> (f| m/left-merge :a :b) evts)
   (-> (f| m/left-merge (s :a) (n :b)) evts)
   (-> (f| m/left-merge [:a] [:b]) evts)
 
@@ -379,6 +413,25 @@
 
 (defn <f [f & cycles]
   (m/merge-cycles* f (reverse cycles) :left-merge))
+
+
+(defn <| [& cycles]
+  (apply f| m/left-merge cycles))
+
+
+(defn |> [& cycles]
+  (apply f| m/left-merge (reverse cycles)))
+
+
+(comment
+  (evts (<| (s :a :b :c) (s :c :d :e)))
+  (evts (|> (s :a :b :c) (s :c :d :e)))
+  (evts (|> (s :a :b :c) (n 1 2 3))))
+
+
+(defn a| [& cycles]
+  (apply f| m/apply-merge cycles))
+
 
 
 (defn s| [& cycles]
@@ -442,7 +495,7 @@
             ))
 
   (evts
-   (+| ))
+   (+| (nt :c :d :e) (nt :c :d :e)))
 
   (evts (s| (+| [1 2 3] [1 2 3])
             (m| - [10 10 10] (range 3))
@@ -458,45 +511,93 @@
 
 
 (defn jux [tx cyc]
-  (s|
-   (pan 0 cyc)
-   (pan 1 (tx cyc))))
+  (s| (|> cyc (pan 0))
+      (|> (tx cyc) (pan 1))))
+
 
 (comment
   (evts
-   (jux rev (n 1 2 3))))
+   (jux identity (n 1 2 3))))
 
-(defn sin
-  ([] (sin 0 1 1))
-  ([max] (sin 0 max 1))
-  ([min max] (sin min max 1))
-  ([min max period]
-   (fn [_ {:keys [event cycls]
-           :or {cycls 0}}]
-     (let [TAU  (* 2 Math/PI)
-           mult (-> max (- min) (/ 2))
-           base (-> (+ cycls (:start event)) (* TAU) (/ period) Math/sin (+ 1) (* mult))
-           n    (+ base min)]
-       n))))
+
+;; fn-vals
+
+
+(defn trig-fn
+  [trig-fn pos period ampl]
+  (-> pos             ;; What part of the cycl are we on
+      (* 2 Math/PI)   ;; Maths
+      (/ period)      ;; How many cycles to stretch over
+      trig-fn         ;; Trig
+      (+ 1)           ;; -1 to 1 => 0 to 2
+      (* ampl)        ;; Amplitude
+      (/ 2)))         ;; 0 to 2 => 0 to 1
+
+
+
+(defn amp
+  ([max] (amp 0 max))
+  ([min max]
+   (fn [v]
+     (let [mult (-> max (- min))]
+       (+ min (* mult (or v 0)))))))
+
+
+(defn sin [ampl {:keys [event]}]
+  (trig-fn Math/sin (:start event) (:period event) (or ampl 1)))
+
+
+(defn cos [ampl {:keys [event]}]
+  (trig-fn Math/cos (:start event) (:period event) (or ampl 1)))
+
+
+(defn square [ampl {:keys [event]}]
+  (let [half (/ (:period event) 2)]
+       (if (< (:start event) half)
+         0
+         (or ampl 1))))
+
+(map #(mod % 1) (range 0 3 0.1))
+
+(defn saw
+  [ampl {:keys [event]}]
+  (let [{:keys [start period]} event]
+    (mod (/ start period) (or ampl 1))))
+
+(defn isaw
+  [ampl ctx]
+  (let [ampl (or ampl 1)]
+    (- ampl (saw ampl ctx))))
+
+(comment
+  (map (partial saw 1) (for [s (range 0 2 0.2)] {:event {:start s :period 1}})))
+
+
+(defn itri
+  [ampl {:keys [event]}]
+  (let [{:keys [start period]} event
+        v (abs (- 1 (mod (* (/ 2 period) start) 2)))]
+    (* (or ampl 1) v)))
+
+(comment
+  (map (partial itri 1) (for [s (range 0 2 0.1)] {:event {:start s :period 1}})))
+
+(defn tri
+  [ampl ctx]
+  (let [ampl (or ampl 1)]
+    (- ampl (itri ampl ctx))))
 
 
 (comment
-  (let [s (sin 0 1 2)]
-    (s nil {:event {:start 0} :cycls 1.5})))
+  (map (partial tri 2) (for [s (range 0 2 0.1)] {:event {:start s :period 2}})))
+
 
 
 (defn rand
-  ([] (rand 0 1))
-  ([max] (rand 0 max))
-  ([min max]
-   (fn []
-     (let [cap (- max min)]
-       (+ (clojure.core/rand cap) min)))))
+  ([ampl] (clojure.core/rand (or ampl 1))))
 
 
 (defn irand
-  ([max] (irand 0 max))
-  ([min max]
-   (fn []
-     (let [cap (- max min)]
-       (+ (rand-int cap) min)))))
+  [ampl]
+  #(rand-int ampl))
+

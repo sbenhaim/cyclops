@@ -20,7 +20,10 @@
 (def tick-dur 1/10)
 
 (defn cps->bpm [cps]
-  (* cps 60))
+  (* cps 60.0))
+
+(defn bpm->cps [bpm]
+  (/ bpm 60.0))
 
 ;; Mutables
 
@@ -40,7 +43,7 @@
 (defmulti dispatch :target)
 
 
-(def defaults (atom {:target :default}))
+(def defaults (atom {:target :dirt}))
 
 
 (defn dispatch*
@@ -81,7 +84,7 @@
 (defn pos->s
   "Given a cycle-relative position, returns seconds based on current cps"
   [pos]
-  (/ (float pos) @cps))
+  (/ (float pos) (bpm->cps (metro/metro-bpm *clock*))))
 
 
 (defn s->pos
@@ -97,12 +100,11 @@
     (let [period (e/period cycl)
           from   (mod cycle-num period)
           slc    (e/slice cycl from tick-dur :starts-during)
-          slc    (e/offset (- from) slc)]
+          slc    (map #(assoc % :trigger-after (- (:start %) from)) slc)]
       (when (seq slc)
         (when @verbose
           (println from 1 (mapv #(select-keys % [:start :s :n]) slc)))
         slc))))
-
 
 (defn apply-timing
   ([slc]
@@ -110,7 +112,8 @@
      (map #(assoc % :trigger-at (-> % :start pos->s (* 1000) (+ now)))
           slc)))
   ([slc cycle-num]
-   (map #(assoc % :trigger-at (*clock* (+ cycle-num (:start %))))
+   (map #(assoc % :trigger-at (*clock* (+ cycle-num (or (:trigger-after %)
+                                                        (:start %)))))
         slc)))
 
 
@@ -184,6 +187,16 @@
   (reset! layers {}))
 
 
+(defn set-cps!
+  [cps]
+  (metro/metro-bpm *clock* (cps->bpm cps)))
+
+
+(defn set-bpm!
+  [bpm]
+  (metro/metro-bpm *clock* bpm))
+
+
 (defn start!
   "Starts/restarts.
 
@@ -232,7 +245,8 @@
 
 (defn o
   [n & cyc]
-  (swap! layers assoc n (hoist-merge cyc)))
+  (swap! layers assoc n (hoist-merge cyc))
+  (speak!))
 
 
 (defn now! [& cyc]

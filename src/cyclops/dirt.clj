@@ -1,13 +1,22 @@
 (ns cyclops.dirt
   (:require
-   [overtone.sc.server :as server]
    [overtone.osc :as osc]
    [cyclops.core :as c :refer [dispatch]]
    [overtone.at-at :refer [now]]
+   [mount.core :as mount :refer [defstate]]
+   [clojure.pprint :refer [pprint]]
    ;; [cyclops.util :refer [reduplicate]]
    ;; [cyclops.sc :as sc]
-   ))
 
+   [clojure.string :as str]
+   [cyclops.util :as u]))
+
+
+(defstate client
+  :start (osc/osc-client "localhost" 57120))
+
+
+(comment (mount/start))
 
 (comment
   (def osc-client (osc/osc-client "localhost" 57120))
@@ -19,7 +28,12 @@
 
 
 (def allowed-keys
-  #{:_id_ :s :cps :cycle :delta :room :size :orbit :pan :n :latency})
+  #{:_id_ :s :cps :cycle :delta :room :size :orbit :pan :n :latency :note :speed
+    :voice :decay :accelerate :semitone :resonance :lfo :rate :pitch1 :pitch2 :pitch3
+    :slide :detune :muffle :stereo :perc :percf :modamp :modfreq
+    :lfofreq :lfodepth :amp :ratio :eglevel :egrate ;; ???
+    :midinote :freq :sustain :in :inr
+    })
 
 
 (def default-event
@@ -36,27 +50,52 @@
    :latency default-latency-s})
 
 
+(defn split-sound-sample
+  [s]
+  (let [[s n] (str/split s #":")]
+    (if n {:s s :n (parse-long n)}
+        {:s s})))
+
+
 (defn ->dirt-map
   [{:keys [trigger-at length params layer]
     :or   {trigger-at (now) length 1 layer 0}}]
-  (-> default-event
-      (merge params)
-      (update :delta #(or % length))
-      (update :latency #(+ % (/ (- trigger-at (now)) 1000.0)))
-      (assoc :orbit layer)
-      (select-keys allowed-keys)))
+  (when-let [s (:s params)]
+    (-> default-event
+        (merge params)
+        (merge (split-sound-sample s))
+        (update :s name)
+        (update :delta #(or % length))
+        (update :latency #(+ % (/ (- trigger-at (now)) 1000.0)))
+        (assoc :orbit layer)
+        (select-keys allowed-keys))))
 
+
+(defn conform [v]
+  (cond
+    (int? v)     (int v)
+    (keyword? v) (name v)
+    :else        v))
+
+
+(comment
+  (type
+   (conform "string")))
 
 (defmethod dispatch :dirt
   [evt]
-  (let [dm (->dirt-map evt)]
+  (when-let [dm (->dirt-map evt)]
+    (when @debug (println (:speed dm)))
     (try
-      (apply osc/osc-send osc-client
+      (apply osc/osc-send client
              "/dirt/play"
-             (mapcat (fn [[k v]] [(name k) (if (number? v) (float v) v)]) dm))
+             (mapcat (fn [[k v]] [(name k) (conform v)]) dm))
       (catch Exception e
         (println (str "OSC ERROR: " (.getMessage e)))))))
 
+(comment
+  (u/toggle! debug)
+  (mount/start)
+  (dispatch {:target :dirt :params {:s "piano" :n 5 :note 0 :decay 1.0}}))
 
 
-(osc/osc-msg dirt-path "_id_" 1)

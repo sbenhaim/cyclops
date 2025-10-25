@@ -405,12 +405,18 @@
   (weigh [_] (apply max (map weigh children))))
 
 
+(defn hoist [thing]
+  (cond 
+    (e/cycl? thing) thing
+    (op? thing)     (->cycl thing)
+    :else           (->cycl [thing])))
+
 ;; Controls
 ;; TODO: Just move to op?
 (defn ->ctrl
   [param value-tx pat]
   (->> pat
-       ->cycl
+       hoist
        (map (fn [evt] (e/reassoc-param evt :init param #(u/defer (u/collate value-tx) %))))))
 
 
@@ -419,7 +425,7 @@
   (or (nil? v) (#{:- "~"} v)))
 
 
-(defn parse-num
+(defn parse-note
   [n]
   (cond
     (rest? n)    nil
@@ -429,8 +435,14 @@
     :else        n))
 
 
-(comment
- (parse-num [:a :b]))
+(defn parse-note
+  [n]
+  (cond
+    (rest? n)    nil
+    (keyword? n) (m/note n)
+    (string? n)  (m/note n)
+    (number? n)  (float n)
+    :else        n))
 
 
 (defn parse-sound

@@ -19,7 +19,7 @@
 
 (def stack-merge
   "Combine as vector, i.e. played simultaneously"
-  (fn-merge (fn [a b] (u/vector* a b))))
+  (fn-merge (fn [a b] (u/set* a b))))
 
 (def or-merge
   "First truthy value wins."
@@ -48,7 +48,7 @@
       (cond
         (u/fn1? b) (b (e/realize a ctx))
         (u/fnv? b) (b (e/realize a ctx))
-        ;; (u/fn2? b) (b (e/realize a ctx) ctx) ;; <- Seems to work
+        (u/fn2? b) (b (e/realize a ctx) ctx) ;; <- Seems to work
         :else (f (e/realize a ctx) (e/realize b ctx))))))
 
 
@@ -72,7 +72,7 @@
    (fn [a b]
      (cond
        (u/num-enough? a b) (f (or a 0) (or b 0))
-       (and a b) (vector a b)
+       (and a b) (u/set* a b)
        :else (or a b)))))
 
 

@@ -7,7 +7,6 @@
   (re-find #"^([a-gA-G][bB]?[#]?)(\d*)$" (name sym)))
 
 
-
 (defn parse-note [sym]
   (let [note-match #"([a-gA-G][bB]?[#]?)(\d*)"
         [orig note octave] (re-find note-match (name sym))]
@@ -44,6 +43,7 @@
 
 (defn cycle+12
   [col]
+  (assert (coll? col))
   (->> col
        repeat
        (mapcat
@@ -57,12 +57,24 @@
   [sym & {:keys [o n incl] :or {incl 0
                                 o 1}}]
   (let [{:keys [midi chord]} (parse-chord sym)
-        notes (m/chord midi chord)
-        cyc (cycle+12 notes)]
-    (cond
-      n (take n cyc)
-      o (take (+ incl (* o (count notes))) cyc)
-      :else cyc)))
+        notes (m/chord midi chord)]
+    (if (seq notes)
+      (let [cyc (cycle+12 notes)]
+        (cond
+          n     (take n cyc)
+          o     (take (+ incl (* o (count notes))) cyc)
+          :else cyc))
+      (throw (ex-info "Chord not found" {:chord-name sym})))))
+
+
+(defn chord-nth
+  [sym]
+  (fn [v]
+    (let [{:keys [midi chord]} (parse-chord sym)
+          notes                (m/chord midi chord)]
+      (if (seq notes)
+        (nth (cycle+12 notes) (or v 0))
+        (throw (ex-info "Chord not found" {:chord-name sym}))))))
 
 ;; TODO: Expose shorted form in ops?
 
@@ -74,12 +86,18 @@
   [root scale-name & {:keys [o n incl]
                       :or   {incl 0
                              o    1}}]
-  (let [notes (butlast (-scale root scale-name))
-        cyc   (cycle+12 notes)]
-    (cond
-      n     (take n cyc)
-      o     (take (+ incl (* o (count notes))) cyc)
-      :else cyc)))
+  (let [notes (butlast (-scale root scale-name))]
+    (if (seq notes)
+      (let [cyc (cycle+12 notes)]
+        (cond
+          n     (take n cyc)
+          o     (take (+ incl (* o (count notes))) cyc)
+          :else cyc))
+      (throw (ex-info "Scale not found" {:scale-name scale-name})))))
 
-
-(comment (scale :c :minor :o 2))
+(comment
+  (butlast (-scale :c0 :blarg))
+  (println
+   (pr-str
+    (scale :c-1 :minor-pentatonic)))
+  )
