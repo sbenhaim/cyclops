@@ -1,15 +1,12 @@
-(ns cyclops.dirt
+(ns cycl.dirt
   (:require
    [overtone.osc :as osc]
-   [cyclops.core :as c :refer [dispatch]]
+   [cycl.core :as c :refer [dispatch]]
+   [cycl.util :as u]
    [overtone.at-at :refer [now]]
    [mount.core :as mount :refer [defstate]]
    [clojure.pprint :refer [pprint]]
-   ;; [cyclops.util :refer [reduplicate]]
-   ;; [cyclops.sc :as sc]
-
-   [clojure.string :as str]
-   [cyclops.util :as u]))
+   [clojure.string :as str]))
 
 
 (defstate client
@@ -30,9 +27,10 @@
 (def allowed-keys
   #{:_id_ :s :cps :cycle :delta :room :size :orbit :pan :n :latency :note :speed
     :voice :decay :accelerate :semitone :resonance :lfo :rate :pitch1 :pitch2 :pitch3
-    :slide :detune :muffle :stereo :perc :percf :modamp :modfreq
+    :slide :detune :muffle :stereo :perc :percf :modamp :modfreq :octave
     :lfofreq :lfodepth :amp :ratio :eglevel :egrate ;; ???
     :midinote :freq :sustain :in :inr
+    :chop
     })
 
 
@@ -92,6 +90,10 @@
              (mapcat (fn [[k v]] [(name k) (conform v)]) dm))
       (catch Exception e
         (println (str "OSC ERROR: " (.getMessage e)))))))
+
+(defn connect-dirt
+  []
+  (mount/start))
 
 (comment
   (u/toggle! debug)

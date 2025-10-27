@@ -1,11 +1,11 @@
-(ns cyclops.ops
+(ns cycl.ops
   "Not simple :(. But easy!"
   (:require
-   [cyclops.pattern :as p]
-   [cyclops.util :as u :refer [smart-splat collate]]
-   [cyclops.merge :as m]
-   [cyclops.music :as mu]
-   [cyclops.events :as e]))
+   [cycl.pattern :as p]
+   [cycl.util :as u :refer [smart-splat collate]]
+   [cycl.merge :as m]
+   [cycl.music :as mu]
+   [cycl.events :as e]))
 
 
 (defmulti evts type)
@@ -24,7 +24,7 @@
 (comment (evts (n :a :b :c)))
 
 
-(defmethod evts cyclops.pattern.Operatic [op]
+(defmethod evts cycl.pattern.Operatic [op]
   (-> op p/->cycl (e/realize nil)))
 
 
@@ -258,10 +258,33 @@
 
 ;; Controls
 
+
+;; Controls
+;; TODO: Just move to op?
+
+
+(defn ->cycl? [thing]
+  (cond
+    (e/cycl? thing) thing
+    (p/op? thing)   (p/->cycl thing)
+    :else           (p/->cycl [thing])))
+
+
+(defn ->ctrl
+  [param value-tx pat]
+  (->> pat
+       smart-splat
+       ->cycl?
+       (map (fn [evt] (e/reassoc-param
+                       evt
+                       :init
+                       param
+                       #(u/defer (u/collate value-tx) %))))))
+
 (defn s
   "Samples and synths"
   [& pat]
-  (p/->ctrl :s p/parse-sound (smart-splat pat)))
+  (->ctrl :s p/parse-sound pat))
 
 
 (comment
@@ -273,26 +296,19 @@
 (defn n
   "Numbers"
   [& pat]
-  (p/->ctrl :n float (smart-splat pat)))
+  (->ctrl :n float pat))
 
 
 (defn mnt
-  "Numbers"
+  "Midi notes"
   [& pat]
-  (p/->ctrl :note p/parse-note (smart-splat pat)))
+  (->ctrl :note p/parse-note pat))
 
 
 (defn nt
-  "Numbers"
+  "Notes"
   [& pat]
-  (p/->ctrl :note #(- (p/parse-note %) 60) (smart-splat pat)))
-
-
-
-(defn n
-  "Numbers and notes."
-  [& pat]
-  (p/->ctrl :n identity (smart-splat pat)))
+  (->ctrl :note #(- (p/parse-note %) 60) pat))
 
 
 (comment
@@ -307,13 +323,33 @@
 (defn pan
   "Left 0.0, Right 1.0"
   [& pat]
-  (p/->ctrl :pan #(-> % (min 1) (max 0) float) (smart-splat pat)))
+  (->ctrl :pan #(-> % (min 1) (max 0) float) pat))
+
+
+(defn decay
+  [& pat]
+  (->ctrl :pan float pat))
+
+
+(defn voice
+  [& pat]
+  (->ctrl :voice float pat))
+
+
+(defn octave
+  [& pat]
+  (->ctrl :octave int pat))
+
+
+(defn accelerate
+  [& pat]
+  (->ctrl :accelerate float pat))
 
 
 (defn speed
   "Left 0.0, Right 1.0"
   [& pat]
-  (p/->ctrl :speed float (smart-splat pat)))
+  (->ctrl :speed float pat))
 
 
 (defn vowel

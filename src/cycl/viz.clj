@@ -1,9 +1,9 @@
-(ns cyclops.viz
+(ns cycl.viz
   (:require
-   [cyclops.events :as e]
-   [cyclops.pattern :as p]
+   [cycl.events :as e]
+   [cycl.pattern :as p]
                                         ;[scicloj.kindly.v4.kind :as kind]
-   [cyclops.util :as u]))
+   [cycl.util :as u]))
 
 
 (defn auto-param

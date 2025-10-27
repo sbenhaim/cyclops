@@ -1,7 +1,7 @@
-(ns cyclops.types
+(ns cycl.types
   (:require
-   [cyclops.events :as e]
-   [cyclops.pattern :as p]
+   [cycl.events :as e]
+   [cycl.pattern :as p]
    [malli.core :as m]))
 
 

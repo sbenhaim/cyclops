@@ -1,9 +1,9 @@
-(ns cyclops.pattern
+(ns cycl.pattern
   (:require
-   [cyclops.events :as e]
-   [cyclops.music :as m]
-   [cyclops.util :as u :refer [cycle-n]]
-   [cyclops.merge :as merge]))
+   [cycl.events :as e]
+   [cycl.music :as m]
+   [cycl.util :as u :refer [cycle-n]]
+   [cycl.merge :as merge]))
 
 ;; Ops
 
@@ -50,7 +50,7 @@
 
 
 ;; TODO: This a good idea?
-(extend-type cyclops.pattern.Operatic
+(extend-type cycl.pattern.Operatic
   e/DoYouRealize?
   (realize [this] (e/realize (->cycl this) nil)))
 
@@ -403,22 +403,6 @@
      (map vector children)))
   Weighty
   (weigh [_] (apply max (map weigh children))))
-
-
-(defn hoist [thing]
-  (cond 
-    (e/cycl? thing) thing
-    (op? thing)     (->cycl thing)
-    :else           (->cycl [thing])))
-
-;; Controls
-;; TODO: Just move to op?
-(defn ->ctrl
-  [param value-tx pat]
-  (->> pat
-       hoist
-       (map (fn [evt] (e/reassoc-param evt :init param #(u/defer (u/collate value-tx) %))))))
-
 
 
 (defn rest? [v]

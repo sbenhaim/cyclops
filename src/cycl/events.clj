@@ -1,7 +1,7 @@
-(ns cyclops.events
+(ns cycl.events
   (:require
-   [cyclops.util :as u :refer [arity p2 lcm]]
-   [cyclops.events :as e]))
+   [cycl.util :as u :refer [arity p2 lcm]]
+   [cycl.events :as e]))
 
 
 (defprotocol DoYouRealize?

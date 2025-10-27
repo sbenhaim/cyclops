@@ -1,4 +1,4 @@
-(ns cyclops.music
+(ns cycl.music
   (:require [overtone.music.pitch :as m]))
 
 

@@ -1,6 +1,6 @@
-(ns cyclops.merge
-  (:require [cyclops.events :as e]
-            [cyclops.util :as u]))
+(ns cycl.merge
+  (:require [cycl.events :as e]
+            [cycl.util :as u]))
 
 
 (defn left-merge

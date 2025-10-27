@@ -1,5 +1,5 @@
 (ns cyclops.ot
-  (:require [cyclops.core :refer [dispatch]]
+  (:require [cycl.core :refer [dispatch]]
             [overtone.studio.core]
             [overtone.studio.mixer :as mixer]
             [overtone.studio.transport :refer [*clock*]]

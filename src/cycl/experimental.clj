@@ -1,5 +1,5 @@
-(ns cyclops.experimental
-  (:require [cyclops.pattern :as p :refer [Operatic]]))
+(ns cycl.experimental
+  (:require [cycl.pattern :as p :refer [Operatic]]))
 
 
 (defmacro defop

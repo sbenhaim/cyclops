@@ -1,15 +1,15 @@
 (ns examples.tidal.oscillators
   {:clj-kondo/ignore true}
   (:require
-   [cyclops.pattern :as p]
-   [cyclops.events :as e]
-   [cyclops.merge :as m]
-   [cyclops.util :refer [toggle!] :as u]
-   [cyclops.core :as c :refer [start! shutdown! o once sh! pause! now!]]
-   [cyclops.ops :refer :all]
+   [cycl.pattern :as p]
+   [cycl.events :as e]
+   [cycl.merge :as m]
+   [cycl.util :refer [toggle!] :as u]
+   [cycl.core :as c :refer [start! shutdown! o once sh! pause! now!]]
+   [cycl.ops :refer :all]
    [clojure.pprint :refer [print-table]]
    [overtone.at-at :refer [now]]
-   [cyclops.music :as mu]))
+   [cycl.music :as mu]))
 
 
 (start!)

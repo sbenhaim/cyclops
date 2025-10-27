@@ -1,4 +1,4 @@
-(ns cyclops.util)
+(ns cycl.util)
 
 
 (defn gcd [a b]

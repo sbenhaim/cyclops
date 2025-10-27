@@ -1,4 +1,4 @@
-(ns cyclops.sc
+(ns cycl.sc
   (:require [overtone.sc.server :as server]
             [overtone.sc.sclang :as lang]
             [babashka.process :as p]

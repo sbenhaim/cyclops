@@ -1,11 +1,11 @@
-(ns cyclops.core
+(ns cycl.core
   "((((Tidal Wave of Parens))))"
   (:require
    [overtone.at-at :as at]
-   [cyclops.events :as e]
-   [cyclops.util :refer [reduplicate]]
-   [cyclops.ops :as ops]
-   [cyclops.core :as c]
+   [cycl.events :as e]
+   [cycl.util :refer [reduplicate]]
+   [cycl.ops :as ops]
+   [cycl.core :as c]
    [overtone.studio.transport :refer [*clock*]]
    [overtone.music.rhythm :as metro]
    [overtone.music.time :refer [apply-by]]))
