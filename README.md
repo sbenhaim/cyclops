@@ -208,8 +208,7 @@ a note or an effect value or a sample number. Only once wrapped in a `control` d
 
 #### Cycl
 
-A record representing a collection of events with a common period. Implements the `Cyclic`
-protocol for all sliceable constructs.
+A sequence of events.
 
 #### Pattern
 
@@ -223,13 +222,22 @@ s "bd [sd sd] hh*2"
 (s :bd [:sd :sd] (x 2 :hh))
 ```
 
-#### Op
+#### Pattern Op
 
-Functions like `slow`, `cyc`, `rep` defining pattern-specific functionality.
+Functions like `slow`, `cyc`, `rep` defining pattern-specific functionality, usually dictating timing or looping characteristics:
+
+`fit` (aka `[]`): Squeezes contents into a single cycle.
+`cyc`: Cycles through contents, one per iteration.
 
 #### Event
 
-A value wrapped in the cycle-relative timing information for when it should start and stop.
+A map or record containing:
+
+`start`: Representing cycle-relative timing (1/2)
+`length`: Representing cycle-relative event duration (which may not be the same as note duration).
+`period`: Representing cycle frequency (1 for every cycle, 2 for every other, etc.)
+`params`: An arbitrary map representing what the event *does*. 
+  In the the default case--Superdirt--a map representing the parameters passed via OSC to the Superdirt instrument, but open for overloading to any semantics defined by your dispatch target.
 
 #### Value
 
@@ -239,13 +247,19 @@ A (usually musical) value or logic for producing a value, often based on time co
 
 `:cm7`
 
-`(irand 10)`
+#### Fn Values
 
-`(sin 0 10 2)`
+A value `fn` that is executed on the beat. Optionally accepts intput values during merge and context during execution.
 
 #### Time context
 
-Where we are in the arrangement in terms of seconds, cycle, and sub-cycle.
+Context passed to value Fns including but not limited to:
+
+- Which event a value is contained by
+- Which param a value represents
+- Current cycle number
+- Current play time
+- Period-realitive cycle number
 
 
 ## Cycle

@@ -263,14 +263,17 @@
 ;; TODO: Just move to op?
 
 
-(defn ->cycl? [thing]
+(defn ->cycl?
+  "If you have good reason to believe somethign *should* be a `cycl`, use this
+  function to make sure it is one."
+  [thing]
   (cond
     (e/cycl? thing) thing
     (p/op? thing)   (p/->cycl thing)
     :else           (p/->cycl [thing])))
 
 
-(defn ->ctrl
+(defn ->param
   [param value-tx pat]
   (->> pat
        smart-splat
@@ -284,7 +287,7 @@
 (defn s
   "Samples and synths"
   [& pat]
-  (->ctrl :s p/parse-sound pat))
+  (->param :s p/parse-sound pat))
 
 
 (comment
@@ -296,19 +299,19 @@
 (defn n
   "Numbers"
   [& pat]
-  (->ctrl :n float pat))
+  (->param :n float pat))
 
 
 (defn mnt
   "Midi notes"
   [& pat]
-  (->ctrl :note p/parse-note pat))
+  (->param :note p/parse-note pat))
 
 
 (defn nt
   "Notes"
   [& pat]
-  (->ctrl :note #(- (p/parse-note %) 60) pat))
+  (->param :note #(- (p/parse-note %) 60) pat))
 
 
 (comment
@@ -323,39 +326,39 @@
 (defn pan
   "Left 0.0, Right 1.0"
   [& pat]
-  (->ctrl :pan #(-> % (min 1) (max 0) float) pat))
+  (->param :pan #(-> % (min 1) (max 0) float) pat))
 
 
 (defn decay
   [& pat]
-  (->ctrl :pan float pat))
+  (->param :pan float pat))
 
 
 (defn voice
   [& pat]
-  (->ctrl :voice float pat))
+  (->param :voice float pat))
 
 
 (defn octave
   [& pat]
-  (->ctrl :octave int pat))
+  (->param :octave int pat))
 
 
 (defn accelerate
   [& pat]
-  (->ctrl :accelerate float pat))
+  (->param :accelerate float pat))
 
 
 (defn speed
   "Left 0.0, Right 1.0"
   [& pat]
-  (->ctrl :speed float pat))
+  (->param :speed float pat))
 
 
 (defn vowel
   ":a :e :i :o :u"
   [& pat]
-  (p/->ctrl :vowel name (smart-splat pat)))
+  (->param :vowel name (smart-splat pat)))
 
 
 (comment (view (vowel :a [:e :i :o] :u))
@@ -365,41 +368,37 @@
 (defn room
   "Reverb room size"
   [& pat]
-  (p/->ctrl :room float (smart-splat pat)))
+  (->param :room float (smart-splat pat)))
 
 
 (defn size
   "Reverb size"
   [& pat]
-  (p/->ctrl :size float (smart-splat pat)))
+  (->param :size float (smart-splat pat)))
 
 
 (defn dry
   "Reverb dry"
   [& pat]
-  (p/->ctrl :dry float (smart-splat pat)))
+  (->param :dry float (smart-splat pat)))
 
 
 (defn legato
   "Play note for `n` segments, then cut."
   [& pat]
-  (p/->ctrl :legato float (smart-splat pat)))
+  (->param :legato float (smart-splat pat)))
 
 
-#_(defn hoist [cycls]
-  (map #(if-not (e/cycl? %) (p/->cycl %) %) cycls))
-
-
-(defn hoist* [cycls]
-  (map p/hoist cycls))
+(defn ->cycl?* [cycls]
+  (map ->cycl? cycls))
 
 
 (comment
-  (hoist* [[:a :b :c] (cyc 1 2 3) [(e/->event :a 0 1 1)] :a]))
+  (->cycl?* [[:a :b :c] (cyc 1 2 3) [(e/->event :a 0 1 1)] :a]))
 
 
 (defn f| [f & cycls]
-  (m/merge-cycles* f (-> cycls hoist*))) ;; <- TODO: Should we smart splat?
+  (m/merge-cycles* f (-> cycls ->cycl?*)))
 
 
 (comment
