@@ -18,10 +18,12 @@
 
   clojure.lang.IFn
   (realize [this ctx]
-    (case (arity this)
-      0 (realize (this) ctx)
-      1 (realize (this nil) ctx)
-      2 (realize (this nil ctx) ctx)
+    (if-not (= (:param ctx) :fn)
+      (case (arity this)
+        0 (realize (this) ctx)
+        1 (realize (this nil) ctx)
+        2 (realize (this nil ctx) ctx)
+        this)
       this)) ; Or (defer this ctx)?
 
   clojure.lang.ISeq

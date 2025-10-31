@@ -5,7 +5,7 @@
    [cycl.events :as e]
    [cycl.merge :as m]
    [cycl.util :refer [toggle!] :as u]
-   [cycl.core :as c :refer [start! shutdown! o once sh! pause! now!]]
+   [cycl.ing :as c :refer [start! shutdown! o once sh! pause! now!]]
    [cycl.ops :refer :all]
    [cycl.dirt :refer [connect-dirt]]
    [clojure.pprint :refer [print-table]]

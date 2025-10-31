@@ -1,7 +1,7 @@
 (ns cycl.dirt
   (:require
    [overtone.osc :as osc]
-   [cycl.core :as c :refer [dispatch]]
+   [cycl.ing :as c :refer [dispatch]]
    [cycl.util :as u]
    [overtone.at-at :refer [now]]
    [mount.core :as mount :refer [defstate]]

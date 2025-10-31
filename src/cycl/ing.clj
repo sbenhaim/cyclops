@@ -4,7 +4,6 @@
    [cycl.events :as e]
    [cycl.util :refer [reduplicate]]
    [cycl.ops :as ops]
-   [cycl.core :as c]
    [overtone.studio.transport :refer [*clock*]]
    [overtone.music.rhythm :as metro]
    [overtone.music.time :refer [apply-by]]))
@@ -63,8 +62,16 @@
   [_target evts _ctx]
   (doseq [{:keys [trigger-at] :or {trigger-at 0} :as evt} evts]
     (at/at trigger-at
-           (println evt)
+           #(println evt)
            pool)))
+
+
+(defmethod dispatch :fn
+  [_target evts _ctx]
+  (doseq [{:keys [trigger-at params] :or {trigger-at 0} :as evt} evts]
+    (when-let [f (:fn params)]
+      (at/at trigger-at f pool))))
+
 
 
 (comment

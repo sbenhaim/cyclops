@@ -279,6 +279,24 @@
                        param
                        #(u/defer (u/collate value-tx) %))))))
 
+(defn ->const
+  [param val pat]
+  (->> pat
+       smart-splat
+       ->cycl?
+       (map (fn [evt] (assoc-in
+                       evt
+                       [:params param]
+                       val)))))
+
+
+(defn f
+  "Timed fns"
+  [& pat]
+  (->> pat
+       (->param :fn p/parse-sound)
+       (->const :target :fn)))
+
 (defn s
   "Samples and synths"
   [& pat]
