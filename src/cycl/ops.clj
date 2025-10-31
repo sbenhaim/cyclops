@@ -1,5 +1,5 @@
 (ns cycl.ops
-  "Not simple :(. But easy!"
+  "(👁️)"
   (:require
    [cycl.pattern :as p]
    [cycl.util :as u :refer [smart-splat collate]]
@@ -13,11 +13,6 @@
 
 (defmethod evts :default [rable]
   (e/realize rable nil))
-
-
-;; This is dangerous, prolly. Don't do it.
-#_(defmethod evts clojure.lang.IPersistentVector [s]
-  (-> s p/->cycl (e/realize nil)))
 
 
 (comment (evts [:a :b :c]))

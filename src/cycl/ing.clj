@@ -1,5 +1,4 @@
-(ns cycl.core
-  "((((Tidal Wave of Parens))))"
+(ns cycl.ing
   (:require
    [overtone.at-at :as at]
    [cycl.events :as e]
@@ -40,30 +39,37 @@
 (def layers (atom {}))
 
 
-(defmulti dispatch :target)
+(defmulti dispatch
+  "Dispatches a collection of timed events (a slice) to a target.
+  Each event includes :trigger-at (absolute timestamp in ms)."
+  (fn [target _evts _ctx] target))
 
 
 (def defaults (atom {:target :dirt}))
 
 
 (defn dispatch*
+  "Dispatches a collection of events, grouping by target for atomic delivery."
   [evts ctx]
-  (doseq [es evts]
-    (doseq [e (reduplicate es)]
-      (dispatch (merge @defaults ctx e)))))
+  (let [evts-flat (mapcat reduplicate evts)
+        evts-merged (map #(merge @defaults ctx %) evts-flat)]
+    (when (seq evts-merged)
+      ;; Group by target and dispatch each group as a slice
+      (doseq [[target target-evts] (group-by :target evts-merged)]
+        (dispatch target target-evts ctx)))))
 
 
 (defmethod dispatch :default
-  [{:keys [start-time] :or {start-time 0} :as evt}]
-  (at/at start-time
-         #(let [r (e/realize evt evt)]
-            (println r))
-         pool))
+  [_target evts _ctx]
+  (doseq [{:keys [trigger-at] :or {trigger-at 0} :as evt} evts]
+    (at/at trigger-at
+           (println evt)
+           pool)))
 
 
 (comment
-  (dispatch {:params {:init (rand)} :start-time (+ 1000 (at/now))})
-  (dispatch* [{"s" "bd"}] {}))
+  (dispatch :default [{:params {:init (rand)} :trigger-at (+ 1000 (at/now))}] {})
+  (dispatch* [{"s" "bd" :target :dirt}] {}))
 
 
 ;; Dirt

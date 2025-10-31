@@ -81,15 +81,21 @@
    (conform "string")))
 
 (defmethod dispatch :dirt
-  [evt]
-  (when-let [dm (->dirt-map evt)]
-    (when @debug (println (:speed dm)))
-    (try
-      (apply osc/osc-send client
-             "/dirt/play"
-             (mapcat (fn [[k v]] [(name k) (conform v)]) dm))
-      (catch Exception e
-        (println (str "OSC ERROR: " (.getMessage e)))))))
+  [_target evts _ctx]
+  (let [dirt-msgs (keep ->dirt-map evts)]
+    (when (seq dirt-msgs)
+      (when @debug
+        (println "Bundling" (count dirt-msgs) "events for SuperDirt"))
+      (try
+        (let [bundle-time (now)
+              msgs (for [dm dirt-msgs]
+                     (osc/osc-msg
+                       "/dirt/play"
+                       (mapcat (fn [[k v]] [(name k) (conform v)]) dm)))
+              bundle (apply osc/osc-bundle bundle-time msgs)]
+          (osc/osc-send-bundle client bundle))
+        (catch Exception e
+          (println (str "OSC BUNDLE ERROR: " (.getMessage e))))))))
 
 (defn connect-dirt
   []
@@ -98,6 +104,6 @@
 (comment
   (u/toggle! debug)
   (mount/start)
-  (dispatch {:target :dirt :params {:s "piano" :n 5 :note 0 :decay 1.0}}))
+  (dispatch :dirt [{:target :dirt :params {:s "piano" :n 5 :note 0 :decay 1.0} :trigger-at (now)}] {}))
 
 
