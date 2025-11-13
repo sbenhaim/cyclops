@@ -49,6 +49,8 @@
        e/normalize)))
 
 
+(comment (->cycl (->cycl (->CyclOp [:a :b]))))
+
 ;; TODO: This a good idea?
 (extend-type cycl.pattern.Operatic
   e/DoYouRealize?
@@ -119,6 +121,15 @@
   (operate [_ ctx] (squeeze children ctx)))
 
 
+(comment
+  (-> (->FitOp [:a :b]) ->cycl)
+
+  (-> (->FitOp [(->CyclOp [:a :b])]) ->cycl)
+  (-> (->CyclOp [(->CyclOp [:a :b])]) ->cycl)
+
+  )
+
+
 (defrecord SpliceOp [children]
   Operatic
   (operate [_this ctx]
@@ -127,23 +138,18 @@
   (weigh [_] (sum-weights children)))
 
 
-(defn basic-ctrl
-  "Ctrl that moves value from `:init` to `:param`"
-  [param pat]
-  (->> pat ->cycl (map #(e/reassoc-param % :init param))))
-
-
 (defn op-merge
   "Given a fn that applies an operator to a single arg, a arg Pattern and a
   value pattern, operates on the merge of arguments with values."
   [->op arg-pat val-pat]
-  (if (= 1 (count arg-pat))
-    (->op (first arg-pat) (->cycl val-pat))
-    (let [param    (gensym)
-          args     (basic-ctrl param arg-pat)
-          cycl     (->cycl val-pat)
-          merge-fn (fn [o evts] (->op (get-in o [:params param]) evts))]
-      (merge/merge-cycles merge-fn args cycl :op-merge))))
+  (let [arg-cycl (->cycl arg-pat)]
+    (if (= 1 (count arg-cycl))
+      (->op (first arg-pat) (->cycl val-pat))
+      (let [param    (gensym)
+            args     (map #(e/reassoc-param % :init param) arg-cycl)
+            cycl     (->cycl val-pat)
+            merge-fn (fn [o evts] (->op (get-in o [:params param]) evts))]
+        (merge/merge-cycles merge-fn args cycl :op-merge)))))
 
 
 (defrecord TimesOp [n children]
@@ -152,10 +158,14 @@
     (squeeze (u/cycle-n n children) ctx)))
 
 
-
 (comment (-> (->TimesOp 3 [:a]) ->cycl)
+         (-> (->TimesOp 2 [:a :b]) ->cycl)
+         (-> (->TimesOp 2 [(->CyclOp [:a :b])]) ->cycl)
+         (-> (->TimesOp 2 [(->cycl (->CyclOp [:a :b]))]) ->cycl)
          (-> [(->TimesOp 3 [:a]) :b] ->cycl)
-         (-> (->TimesOp 3 [(e/->event :a 0 1 1)]) ->cycl))
+         (-> (->TimesOp 3 [(e/->event :a 0 1 1)]) ->cycl)
+
+         (->cycl (->CyclOp [:a :b])))
 
 
 (defrecord TimesOp* [n* children]
@@ -167,6 +177,7 @@
 (comment
   (-> (->TimesOp* [2] [:a]) ->cycl)
   (-> (->TimesOp* [2] [:a :b]) ->cycl)
+  (-> (->TimesOp* [2] [(->CyclOp [:a :b])]) ->cycl)
   (-> (->TimesOp* [2 2] [:a :b]) ->cycl)
   (-> (->FitOp [:c (->TimesOp* [2] [:a])]) ->cycl)
   (-> (->FitOp [(->TimesOp* [2] [:a :b]) :c]) ->cycl)
@@ -197,7 +208,6 @@
     (operate (rep-op-merge n* children) ctx))
   Weighty
   (weigh [_] (sum-weights (rep-op-merge n* children))))
-
 
 
 (comment
@@ -403,6 +413,33 @@
      (map vector children)))
   Weighty
   (weigh [_] (apply max (map weigh children))))
+
+
+(defrecord ChopOp [n children]
+  Operatic
+  (operate [_ ctx]
+    (let [evts      (->cycl children ctx)
+          cnt       (count evts)
+          op        (->TimesOp* (repeat n cnt) evts)
+          pre-chops (operate op ctx)
+          ;; ops       (map #(->TimesOp n [%]) evts)
+          ;; pre-chops (mapcat #(operate % ctx) ops)
+          ;; chops     (map #(-> %
+          ;;                     (e/assoc-param :begin (:start %))
+          ;;                     (e/assoc-param :end (e/end %)))
+          ;;                pre-chops)
+          ]
+      
+      pre-chops
+      ;; evts
+      ;; chops
+      ))
+  Weighty
+  (weigh [_] (weigh children)))
+
+
+(comment
+  (-> (->ChopOp 2 (->CyclOp [:sd :bd])) (operate base-context)))
 
 
 (defn rest? [v]

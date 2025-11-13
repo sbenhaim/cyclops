@@ -38,7 +38,6 @@
   (->op p/->FitOp children))
 
 
-
 (comment
   (require '[dev-utils.portal :refer [tap-type>]])
   (require '[cyclops.viz :refer [vega-cycl]])
@@ -47,6 +46,8 @@
     ([c] (view c nil))
     ([c param]
      (tap-type> :vega-lite (vega-cycl (evts c) param))))
+
+  (evts (fit :a :b))
 
   (p/->cycl
    (fit :a (cyc :b (fit 2 :c))))
@@ -61,6 +62,37 @@
 (defn x [n-pat & children]
   (->op p/->TimesOp* n-pat children))
 
+
+(comment
+  (evts (x 2 :a))
+  (evts (cyc (x 2 :a))))
+
+(defn -x [n & children]
+  (->op p/->TimesOp n children))
+
+
+
+(comment
+  (evts (-x 2 (cyc :sd :bd))))
+
+
+(defn chop
+  [& numpat]
+  (let [evts      (-> numpat u/smart-splat p/->cycl)
+        timeses   (map #(x (e/get-init %) %) evts)
+        pre-chops (p/->cycl timeses)]
+    pre-chops
+    #_(for [chp pre-chops]
+        (-> chp
+            (e/assoc-param :begin (:start chp))
+            (e/assoc-param :end (e/end chp))
+            (e/dissoc-param :init)))))
+
+
+(chop 2)
+
+(comment
+  (evts (<| (chop 2) (s :bd))))
 
 
 (comment
@@ -116,13 +148,14 @@
 
 (comment
 
+  (evts (slow 3/2 :bd))
   (evts (slow [2 2] :bd :sd))
   (evts (slow 2 :bd :sd))
   (evts (slow [2 1 2] :bd :sd :cr))
 
   (view (slow [2 2] :bd :sd))
   (view (slow 2 :bd :sd))
-  (view (slow [2 1 2] :bd :sd :cr))
+  (evts (slow [2 1 2] :bd :sd :cr))
 
   (evts (cyc (n :a :b :c)))
   (evts (fit (n :a :b :c)))
@@ -296,6 +329,7 @@
   (->> pat
        (->param :fn p/parse-sound)
        (->const :target :fn)))
+
 
 (defn s
   "Samples and synths"

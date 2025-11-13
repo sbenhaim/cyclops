@@ -110,3 +110,14 @@
   (m/schema
    [:function
     [:=> [:cat :sequential TOp]]]))
+
+
+(comment
+  (def TPattern-
+    [:enum TValue map? TOp])
+
+
+  (def =>Cycl
+    (m/schema
+     [:function
+      [:=> TPattern- TCycle]])))

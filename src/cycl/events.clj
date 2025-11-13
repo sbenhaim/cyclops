@@ -4,6 +4,7 @@
    [cycl.events :as e]))
 
 
+
 (defprotocol DoYouRealize?
   (realize [this ctx]))
 
@@ -30,28 +31,36 @@
   (realize [this ctx] (map (p2 realize ctx) this)))
 
 
-(defrecord Event [params start length period]
+(defrecord Event [params start length iter period]
   Comparable
   (compareTo [this that]
-    (compare [(:start this) (:length this)] [(:start that) (:length that)]))
+    (let [f (juxt :iter :start :length)]
+      (compare (f this) (f that))))
   DoYouRealize?
   (realize [this ctx]
     (let [realized (into {} (for [[k v] params] [k (realize v (assoc ctx :param k :event this))]))]
       (assoc this :params realized))))
 
 
+(defn ->event
+  ([init] (->event init 0 1 0 1))
+  ([init start length iter period]
+   (->Event {:init init} start length iter period)))
+
+
 (comment
-  (realize (->event #(rand) 0 1/2 1) nil)
+  (realize (->event #(rand) 0 1/2 0 1) nil)
   (event?
-   (realize (->Event {:init #(rand) :else 5 :ctx identity} 0 1/2 1) nil)))
+   (realize (->Event {:init #(rand) :else 5 :ctx identity} 0 1/2 0 1) nil)))
+
 
 (defn event? [evt?]
-  ((every-pred :period :start :length) evt?))
+  (number? (:start evt?)))
 
 
 (comment
-  (event? (->Event {:init :hi} 0 1 1))
-  (event? (->event :hi 0 1 1))
+  (event? (->Event {:init :hi} 0 1 0 1))
+  (event? (->event :hi 0 1 0 1))
   (event? {:period 1 :start 1 :length 1})
   (event? {:period 1 :start 1}))
 
@@ -62,9 +71,6 @@
     (apply f (map (p2 realize ctx) args))))
 
 
-(defn ->event [init start length period]
-  (->Event {:init init} start length period))
-
 
 (defn get-param
   [e param]
@@ -74,6 +80,11 @@
 (defn get-init
   [e]
   (get-param e :init))
+
+
+(defn assoc-param
+  [e k v]
+  (assoc-in e [:params k] v))
 
 
 (defn update-param
@@ -134,13 +145,19 @@
                     repeat
                     (mapcat
                      (fn [i cycl]
-                       (map (fn [e] (update e :start #(+ % (* i period)))) cycl))
+                       (map (fn [e] (update e :iter #(+ % (* i period)))) cycl))
                      (range)))]
      (if n
        (->> cycl
             (map #(assoc % :period (* period n)))
             (take (* n (count evts))))
        cycl))))
+
+
+(comment
+  (cycle-events 2 [{:start 0 :iter 0 :period 1}])
+  (cycle-events 2 [{:start 0 :iter 1 :period 2}])
+  (cycle-events 2 [{:start 1/2 :iter 3 :period 4}]))
 
 
 (defn slice [evts from length mode]
@@ -170,7 +187,9 @@
   (reduce lcm (map period cycls)))
 
 
-(comment (lcp [[(->event :a 0 1 2)] [(->event :b 0 1 3) (->event :c 1 1 3)] [(->event :d 2 1 4)]]))
+(comment
+  ;; 12
+  (lcp [[(->event :a 0 1 0 2)] [(->event :b 0 1 2 3) (->event :c 1 1 1 3)] [(->event :d 2 1 3 4)]]))
 
 
 (defn normalize-periods

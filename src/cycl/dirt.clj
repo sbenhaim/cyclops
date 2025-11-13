@@ -89,9 +89,9 @@
       (try
         (let [bundle-time (now)
               msgs (for [dm dirt-msgs]
-                     (osc/osc-msg
-                       "/dirt/play"
-                       (mapcat (fn [[k v]] [(name k) (conform v)]) dm)))
+                     (apply osc/osc-msg
+                            "/dirt/play"
+                            (mapcat (fn [[k v]] [(name k) (conform v)]) dm)))
               bundle (apply osc/osc-bundle bundle-time msgs)]
           (osc/osc-send-bundle client bundle))
         (catch Exception e
