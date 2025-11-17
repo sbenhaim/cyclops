@@ -104,9 +104,10 @@
   [with-fn]
   (fn [a b]
     (let [start (max (:start a) (:start b))
+          full-start (max (e/start a) (e/start b))
           end   (min (e/end a) (e/end b))]
       (-> ((merge-events-left with-fn) a b)
-          (assoc :start start :length (- end start))))))
+          (assoc :start start :length (- end full-start))))))
 
 
 
@@ -122,7 +123,7 @@
         ]
     (reduce
      (fn [result e]
-       (let [overlap (e/slice nb (:start e) (:length e) slice-mode)
+       (let [overlap (e/slice nb (e/start e) (:length e) slice-mode)
              overlap (case mode
                        :double-merge overlap           ;; Double merge events can multiply
                        :left-merge   (take 1 overlap)   ;; While in left merge, one a event becomes one merged event

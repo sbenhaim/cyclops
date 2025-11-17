@@ -105,8 +105,12 @@
   (update e :params #(dissoc % param)))
 
 
+(defn start [^Event e]
+  (+ (:start e) (:iter e)))
+
+
 (defn end [^Event e]
-  (+ (:start e) (:length e)))
+  (+ (:start e) (:iter e) (:length e)))
 
 
 (defn event-xf
@@ -167,9 +171,9 @@
         to            (if (<= to from) (+ to p) to)
         loop          (if (> to p) (cycle-events evts) evts)
         [drop? take?] (case mode
-                        :starts-during [#(> from (:start %)) #(> to (:start %))]
+                        :starts-during [#(> from (start %)) #(> to (start %))]
                         :ends-during   [#(> from (end %)) #(> to (end %))]
-                        :active-during [#(>= from (end %)) #(> to (:start %))])
+                        :active-during [#(>= from (end %)) #(> to (start %))])
         slc           (into []
                             (comp
                              (drop-while drop?)
@@ -198,8 +202,9 @@
     (map #(cycle-events (/ p (period %)) %) cycls)))
 
 
+
 (comment
-  (normalize-periods [[(->event :a 0 1 2)] [(->event :b 0 1 3) (->event :c 1 1 3)] [(->event :d 2 1 4)]]))
+  (normalize-periods [[(->event :a 0 1 0 2)] [(->event :b 0 1 0 3) (->event :c 1/2 1 1 3)] [(->event :d 0 1 3 4)]]))
 
 
 (defn interleave-cycles
