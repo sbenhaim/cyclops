@@ -167,7 +167,12 @@
 
 (evts (fit :a (slow 2 :b) (slow 3 :c)))
 
+
+(slow 2 (fit :a (cyc :b :c)))
+
 ;; Questions
 ;; - Should ops operate on patterns or cycles
 ;; - or both?
+
+(/ 1.0 1.5)
 
