@@ -4,13 +4,6 @@
             [cycl.merge :as merge]))
 
 
-(defn ->cycl?
-  [thing]
-  (cond
-    (e/cycl? thing)  thing
-    (e/event? thing) [thing]
-    (map? thing)     [(e/->Event map 0 1 0 1)]
-    :else            [(e/->event thing)]))
 
 
 (defn scale
@@ -24,45 +17,90 @@
 
 
 (defn offset
-  [cycl n & keys]  (for [evt cycl]
+  [cycl n & keys]
+  (for [evt cycl]
     (reduce
      (fn [evt k] (update evt k #(+ n %)))
      evt
      keys)))
 
 
-(defn cycl-len
+
+
+(defn normalize
   [cycl]
-  (let [iter (apply min (map :iter cycl))]
-    (reduce + (for [evt cycl :when (= iter (:iter evt))]
-                (:length evt)))))
+  (for [evt cycl]
+    (let [[whole part] (u/compound-fraction (:start evt))]
+      (-> evt
+          (assoc :start part)
+          (update :iter #(+ % whole))))))
+
+
+(defn unoffset
+  [cycl]
+  (let [n (get-in cycl [0 :start])]
+    (offset cycl (- n) :start)))
+
+
+(defn cycl-len
+  ([cycl] (cycl-len cycl (apply min (map :iter cycl))))
+  ([cycl iter]
+   (reduce + (for [evt cycl :when (= iter (:iter evt))]
+               (:length evt)))))
 
 
 
 (defn cycls-len
   [cycls]
-  (reduce + (map cycl-len cycls)))
+  (let [iter (apply min (map :iter (first cycls)))]
+    (reduce + (map #(cycl-len % iter) cycls))))
 
 
 (defn el-op [x cycl]
   (scale cycl x :start :length))
 
 
+(defn by-iter
+  [cycls]
+  (let [iters (distinct (for [cycl cycls evt cycl] (:iter evt)))]
+    (into {} (for [iter iters]
+               [iter
+                (keep (fn [cycl]
+                        (seq (filter (fn [e] (= (:iter e) iter)) cycl)))
+                      cycls)]))))
+
+
+(comment
+  (fit-op [(vector {:params {:init :a}, :start 0N, :length 1/2, :iter 0, :period 2N}
+                   {:params {:init :a}, :start 1/2, :length 1/2, :iter 0, :period 2N})
+           (vector {:params {:init :b}, :start 0N, :length 1N, :iter 0, :period 2N})
+           (vector {:params {:init :a}, :start 0N, :length 1/2, :iter 1, :period 2N}
+                   {:params {:init :b}, :start 1/2, :length 1/2, :iter 1, :period 2N})]))
+
+
+
 (defn fit-op
   [cycls]
-  (let [cycle-len    (cycls-len cycls)
-        segmentation (/ cycle-len)]
-    (if (and false (<= cycle-len 1)) ; TODO:
-      (flatten cycls)
-      (loop [[cycl & rst] cycls start 0 out []]
-        (if (nil? cycl) out
-            (let [fitted (-> cycl
-                             (scale segmentation :start :length)
-                             (offset start :start))
-                  length (cycl-len fitted)]
-              (recur rst
-                     (+ start length)
-                     (concat out fitted))))))))
+  (->>
+   (for [[_iter cycls] (by-iter cycls)]
+     (let [cycle-len    (cycls-len cycls)
+           segmentation (/ cycle-len)]
+       (if (and false (<= cycle-len 1))    ; TODO:
+         (flatten cycls)
+         (loop [[cycl & rst] cycls start 0 out []]
+           (if (nil? cycl) out
+               (let [fitted (-> cycl
+                                  (scale segmentation :start :length)
+                                  (offset start :start))
+                     length (cycl-len fitted)]
+                 (recur rst
+                        (+ start length)
+                        (concat out fitted))))))))
+   flatten
+   (sort e/event-compare)))
+
+
+(fit-op [[{:start 0 :length 1/2 :iter 0}]])
 
 
 (defn cycl-op
@@ -75,6 +113,15 @@
                  (concat out (-> cycl
                                  (scale period :iter :period)
                                  (offset iter :iter))))))))
+
+
+(defn ->cycl?
+  [thing]
+  (cond
+    (e/cycl? thing)  thing
+    (e/event? thing) [thing]
+    (map? thing)     [(e/->Event thing 0 1 0 1)]
+    :else            [(e/->event thing)]))
 
 
 (defn encyclify
@@ -97,6 +144,7 @@
   (encyclify [:a :b])
   (encyclify [:a (fit :a :b)])
   (encyclify [:a :b '(:c :d)])
+  (encyclify [[:a :b] '(:c :d)])
   )
 
 
@@ -129,15 +177,10 @@
 
 (defn times-op
   [n cycl]
-  (fit-op (u/cycle-n n pattern)))
-
-
-(comment
   (fit-op
-   [(e/cycle-events 2 (fit :a))]))
+   (repeat n cycl)))
 
 
-(ns-unmap *ns* 'op-merge)
 (defn op-merge
   "Given a fn that applies an operator to a single arg, a arg Pattern and a
   value pattern, operates on the merge of arguments with values."
@@ -146,71 +189,72 @@
     (op1 (-> arg-cycl first e/get-init) val-cycl)
     (let [param (gensym)
           args  (map #(e/reassoc-param % :init param) arg-cycl)
-          ;; merge-fn (fn [a bs] (list op1 (e/get-param a param) bs))
-          ;; evts  (merge/merge-cycles merge-fn args val-cycl :op-merge)
-          merge-fn (fn [a bs] (op1 (e/get-param a param) bs))
-          evts  (merge/merge-cycles merge-fn args val-cycl :op-merge)
-          ]
+          merge-fn (fn [arg-evt val-evts] (op1 (e/get-param arg-evt param) (unoffset val-evts)))
+          evts  (merge/merge-cycles merge-fn args val-cycl :op-merge)]
+      evts
       (fit-op evts)
-      ;; (flatten evts)
-      #_(for [evt evts]
-        (let [arg (e/get-param evt param)]
-          `(~op1 ~arg [~(e/dissoc-param evt param)]))))))
+      )))
 
 
 
-(op-merge x1 (fit 2 2) (fit :a :b))
-
-(fit )
-
-(fit-op [[{:start 1/2 :length 1/2 :iter 0 :period 1}]])
-
-
-(cyc
- (fit :a) (cyc :b :c) (fit :d))
+(comment
+  println
+  (op-merge times-op (cyc [2 1] 1) (fit :a :b))
+  (op-merge el-op (cyc [2 1] [1 1]) (fit :a :b))
+  (op-merge rep-op (cyc [2 1] [1 1]) (fit :a :b))
+  (op-merge rep-op (cyc 2 1) (fit :a))
+  (op-merge times-op (fit 2 2) (fit :a :b))
 
 
-(cycl-op
- [(x1 2 [{:params {:init :a}, :start 0, :length 1/2, :iter 0, :period 1}])
-  (x1 1 {:params {:init :a}, :start 1/2, :length 1/2, :iter 0, :period 1})])
+  (fit-op [(vector {:params {:init :a}, :start 0N, :length 1/2, :iter 0, :period 2N}
+                   {:params {:init :a}, :start 1/2, :length 1/2, :iter 0, :period 2N})
+           (vector {:params {:init :b}, :start 0N, :length 1N, :iter 0, :period 2N})
+           (vector {:params {:init :a}, :start 0N, :length 1/2, :iter 1, :period 2N}
+                   {:params {:init :b}, :start 1/2, :length 1/2, :iter 1, :period 2N})])
 
 
-(x1 2 (fit :a))
+  (map #(filter (fn [e] (= (:iter e) 1)) %) [(vector {:params {:init :a}, :start 0N, :length 1/2, :iter 0, :period 2N}
+                       {:params {:init :a}, :start 1/2, :length 1/2, :iter 0, :period 2N})
+               (vector {:params {:init :b}, :start 0N, :length 1N, :iter 0, :period 2N})
+               (vector {:params {:init :a}, :start 0N, :length 1/2, :iter 1, :period 2N}
+                       {:params {:init :b}, :start 1/2, :length 1/2, :iter 1, :period 2N})])
 
 
+  )
 
-(fit
- (x1 2 [:a])
- (x1 2 [:b]))
+(defn x
+  [n* & pattern]
+  (op-merge times-op (first (encyclify [n*])) (apply fit pattern)))
+
+
+(comment
+  (x 2 :a :b)
+  (x (fit 2 2) :a :b))
 
 
 (defn el
   [n & pattern]
   (el-op n (apply fit pattern)))
 
-(comment
-  (fit :a :b)
-  (fit :a (el 2 :b))
-  (cyc :a :b)
-  (cyc :a (el 2 :b))
-  (fit (el 2 :a) (cyc :b (el 2 :c)))
-  (fit :a (el 2 (cyc :b :c))))
+
+(defn rep-op
+  [n cycl]
+  (-> (x n cycl)
+      (scale n :start :length)))
+
+
+(fit-op
+ [(rep-op 3 (fit :a))])
 
 
 (defn rep
-  [n & pattern]
-  (apply repeat n pattern))
+  [n* & pattern]
+  (op-merge rep-op (first (encyclify [n*])) (apply fit pattern)))
 
 
 (comment
-  (fit
-   [:a :a]
-   ;; (x 2 :a) 
-   ;; (rep 2 :a)
-   ;; '(:a :a)
-   :b))
+  (cyc (rep 2 :a) :b))
 
 
-;; Rest of the ops
-;; Pattern args
-;; Realization, merging, normalization, timing
+(fit-op
+ [(rep-op 2 (fit :a))])

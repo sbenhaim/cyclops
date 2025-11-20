@@ -31,11 +31,16 @@
   (realize [this ctx] (map (p2 realize ctx) this)))
 
 
-(defrecord Event [params start length iter period]
+(defn event-compare
+  [this that]
+  (let [f (juxt :start :length)]
+      (compare (f this) (f that))))
+
+
+(defrecord Event [params start length period]
   Comparable
   (compareTo [this that]
-    (let [f (juxt :iter :start :length)]
-      (compare (f this) (f that))))
+    (event-compare this that))
   DoYouRealize?
   (realize [this ctx]
     (let [realized (into {} (for [[k v] params] [k (realize v (assoc ctx :param k :event this))]))]
@@ -43,9 +48,10 @@
 
 
 (defn ->event
-  ([init] (->event init 0 1 0 1))
-  ([init start length iter period]
-   (->Event {:init init} start length iter period)))
+  ([init] (->event init 0 1 1))
+  ([init start length period]
+   (let [init (if (map? init) init {:init init})]
+     (->Event init start length period))))
 
 
 (comment
@@ -106,11 +112,11 @@
 
 
 (defn start [^Event e]
-  (+ (:start e) (:iter e)))
+  (+ (:start e)))
 
 
 (defn end [^Event e]
-  (+ (:start e) (:iter e) (:length e)))
+  (+ (:start e) (:length e)))
 
 
 (defn event-xf
@@ -149,7 +155,7 @@
                     repeat
                     (mapcat
                      (fn [i cycl]
-                       (map (fn [e] (update e :iter #(+ % (* i period)))) cycl))
+                       (map (fn [e] (update e :start #(+ % (* i period)))) cycl))
                      (range)))]
      (if n
        (->> cycl
@@ -159,9 +165,9 @@
 
 
 (comment
-  (cycle-events 2 [{:start 0 :iter 0 :period 1}])
-  (cycle-events 2 [{:start 0 :iter 1 :period 2}])
-  (cycle-events 2 [{:start 1/2 :iter 3 :period 4}]))
+  (cycle-events 2 [{:start 0 :period 1}])
+  (cycle-events 2 [{:start 1 :period 2}])
+  (cycle-events 2 [{:start 5/2 :period 4}]))
 
 
 (defn slice [evts from length mode]

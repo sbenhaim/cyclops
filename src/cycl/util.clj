@@ -264,3 +264,14 @@
 
 (comment
   (maybe-> 2 zero? inc))
+
+
+(defn mixed [n]
+  (let [w (long n)
+        frac (- n w)]
+    [w frac]))
+
+
+(comment
+  (mixed 3/2)
+  (mixed 1.5))
