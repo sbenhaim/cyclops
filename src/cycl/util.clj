@@ -281,3 +281,11 @@
 (comment
   (mixed 3/2)
   (mixed 1.5))
+
+
+(defn weighted
+  [vals weights]
+  (let [num (count vals)
+        denom (reduce + weights)
+        rat (/ num denom)]
+    (map (fn [v w] (* v w rat)) vals weights)))
