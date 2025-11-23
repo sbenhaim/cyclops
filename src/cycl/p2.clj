@@ -26,11 +26,10 @@
 
 
 
-
 (defn normalize
   [cycl]
   (for [evt cycl]
-    (let [[whole part] (u/compound-fraction (:start evt))]
+    (let [[whole part] (u/mixed (:start evt))]
       (-> evt
           (assoc :start part)
           (update :iter #(+ % whole))))))
@@ -42,18 +41,22 @@
     (offset cycl (- n) :start)))
 
 
-(defn cycl-len
-  ([cycl] (cycl-len cycl (apply min (map :iter cycl))))
-  ([cycl iter]
-   (reduce + (for [evt cycl :when (= iter (:iter evt))]
-               (:length evt)))))
 
+(defn iter [evt]
+  (long (:start evt)))
+
+
+(defn cycl-len
+  ([cycl] (cycl-len cycl (apply min (map iter cycl))))
+  ([cycl iter-no]
+   (reduce + (for [evt cycl :when (= iter-no (iter evt))]
+               (:length evt)))))
 
 
 (defn cycls-len
   [cycls]
-  (let [iter (apply min (map :iter (first cycls)))]
-    (reduce + (map #(cycl-len % iter) cycls))))
+  (let [iter-no (apply min (map iter (first cycls)))]
+    (reduce + (map #(cycl-len % iter-no) cycls))))
 
 
 (defn el-op [x cycl]
@@ -62,11 +65,11 @@
 
 (defn by-iter
   [cycls]
-  (let [iters (distinct (for [cycl cycls evt cycl] (:iter evt)))]
-    (into {} (for [iter iters]
-               [iter
+  (let [iters (distinct (for [cycl cycls evt cycl] (iter evt)))]
+    (into {} (for [iter-no iters]
+               [iter-no
                 (keep (fn [cycl]
-                        (seq (filter (fn [e] (= (:iter e) iter)) cycl)))
+                        (seq (filter (fn [e] (= (iter e) iter-no)) cycl)))
                       cycls)]))))
 
 
@@ -90,7 +93,10 @@
          (loop [[cycl & rst] cycls start 0 out []]
            (if (nil? cycl) out
                (let [fitted (-> cycl
-                                  (scale segmentation :start :length)
+                                  (scale segmentation :length)
+                                  (->> (map (fn [e]
+                                              (let [[cycle offset] (u/mixed (:start e))]
+                                                (assoc e :start (+ cycle (* offset segmentation)))))))
                                   (offset start :start))
                      length (cycl-len fitted)]
                  (recur rst
@@ -98,9 +104,6 @@
                         (concat out fitted))))))))
    flatten
    (sort e/event-compare)))
-
-
-(fit-op [[{:start 0 :length 1/2 :iter 0}]])
 
 
 (defn cycl-op
@@ -111,8 +114,12 @@
           (recur rst
                  (+ iter (cycl-len cycl))
                  (concat out (-> cycl
-                                 (scale period :iter :period)
-                                 (offset iter :iter))))))))
+                                 (scale period :period)
+                                 (->> (map (fn [e] (let [start (:start e)
+                                                         [iter offset] (u/mixed start)]
+                                                     (assoc e :start
+                                                            (+ (* iter period) offset))))))
+                                 (offset iter :start))))))))
 
 
 (defn ->cycl?
@@ -171,8 +178,11 @@
   (cyc (vector (range 10)))
   (cyc (fit [:a :b :c]) :c)
   (cyc [:a :b])
-  (cyc '(:a :b))
-  )
+  (cyc '(:a :b)))
+
+
+(comment
+  (fit :a (cyc :b :c)))
 
 
 (defn times-op
@@ -191,15 +201,13 @@
           args  (map #(e/reassoc-param % :init param) arg-cycl)
           merge-fn (fn [arg-evt val-evts] (op1 (e/get-param arg-evt param) (unoffset val-evts)))
           evts  (merge/merge-cycles merge-fn args val-cycl :op-merge)]
-      evts
-      (fit-op evts)
-      )))
+      (fit-op evts))))
 
 
 
 (comment
   println
-  (op-merge times-op (cyc [2 1] 1) (fit :a :b))
+  (op-merge times-op (cyc [2 1] [1 1]) (fit :a :b))
   (op-merge el-op (cyc [2 1] [1 1]) (fit :a :b))
   (op-merge rep-op (cyc [2 1] [1 1]) (fit :a :b))
   (op-merge rep-op (cyc 2 1) (fit :a))
@@ -253,8 +261,8 @@
 
 
 (comment
-  (cyc (rep 2 :a) :b))
+  (cyc (rep 2 :a) :b)
 
 
-(fit-op
- [(rep-op 2 (fit :a))])
+  (fit-op
+   [(rep-op 2 (fit :a))]))

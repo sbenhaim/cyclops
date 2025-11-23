@@ -9,13 +9,19 @@
 
 (defn lcm
   ([a b]
-   (if (or (zero? a) (zero? b))
-     0
-     (-> a
-         (* b)
-         (quot (gcd a b)))))
+   (cond
+     (or (zero? a) (zero? b)) 0
+     (= a b) a
+     :else (/ (* a b) (gcd a b))))
   ([a b & more]
    (reduce lcm (lcm a b) more)))
+
+
+
+(comment
+  (lcm 5 2)
+  (lcm 1/2 1/3)
+  (lcm 1/4 1/4))
 
 
 (defn cycle-n

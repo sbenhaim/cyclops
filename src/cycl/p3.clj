@@ -1,13 +1,12 @@
 (ns cycl.p3
-  (:require [cycl.events :as e]
-            [cycl.util :as u]
-            [cycl.merge :as merge]))
+  (:require [cycl.event :as e]
+            [cycl.cycl :as c]))
 
 
 (defn ->cycl?
   [thing]
   (cond
-    (e/cycl? thing)  thing
+    (c/cycl? thing)  thing
     (e/event? thing) [thing]
     :else            [(e/->event thing)]))
 
@@ -27,6 +26,95 @@
   (reduce + (map weigh cycls)))
 
 
+
+
+(comment
+  (e/translate (fit :a :b :c) 1/2 1/2 1)
+  (-> (fit :a :b :c) (e/translate 1/2 1 1) (e/zero))
+  (-> (fit :a :b :c) (e/translate 1/2 1/2 1) (e/translate))
+
+  (-> (cyc :a :b (cyc :c :d)) e/normalize-cycl (e/translate 0 6 6))
+  )
+
+
+(defn arrange
+  [f cycls]
+  (let [weights (map weigh cycls)
+        n       (reduce + weights)
+        offsets (reductions + 0 weights)]
+    (mapcat (fn [cycl weight offset]
+              (f cycl weight offset n))
+            cycls weights offsets)))
+
+
+
+
+(defn squeeze
+  [x cycls]
+  (->
+   (arrange
+    (fn [cycl weight offset n]
+      (for [evt cycl]
+        (let [[iter frac] (e/position evt)
+              factor      (/ x n)]
+          (-> evt
+              (assoc :start (+ iter (* offset factor) (* frac weight factor)))
+              (update :length #(* % weight factor))
+              (update :period #(* % x))))))
+    cycls)
+   (c/normalize)))
+
+
+(comment
+  (squeeze 1 (encyclify [:a :b :c :d]))
+  (squeeze 1 (encyclify [:a :b :c (squeeze 1 (encyclify [:d :e]))]))
+  (squeeze 1 (encyclify [:a :b :c (spread 2 (encyclify [:d :e]))]))
+  (squeeze 2 (encyclify [:a :b]))
+  (squeeze 3/2 (encyclify [:a :b]))
+  (squeeze 1 (encyclify [:a :b (with-meta (squeeze 1 (encyclify [:c :d])) {:weight 2})]))
+  (squeeze 2 (encyclify [:a :b (with-meta (squeeze 1 (encyclify [:c :d])) {:weight 2})]))
+  (squeeze 1/2 (encyclify [:a :b (squeeze 1 (encyclify [:c :d]))])))
+
+
+
+
+
+(defn spread
+  [x cycls]
+  (arrange
+   (fn [cycl weight offset n]
+     (for [evt cycl]
+       (let [start  (:start evt)
+             cycle  (long start)
+             frac   (- start cycle)
+             factor (/ x n)]
+         (-> evt
+             (assoc :start (+ (* n cycle) (* offset factor) (* frac weight factor)))
+             (update :length #(* % weight factor))
+             (update :period #(* % x))))))
+   cycls))
+
+
+
+(comment
+  (spread 4 (encyclify [:a :b :c :d]))
+  (spread 3 (encyclify [:a :b :c :d]))
+  (spread 2 (encyclify [:a :b :c :d]))
+  (spread 3 (encyclify [:a :b (spread 2 (encyclify [:c :d]))]))
+  (spread 2 (encyclify [:a :b (spread 2 (encyclify [:c :d]))]))
+  (spread 4 (encyclify [:a :b (with-meta (spread 1 (encyclify [:c :d])) {:weight 2})]))
+  (spread 2 (encyclify [:a :b (with-meta (squeeze 1 (encyclify [:c :d])) {:weight 2})]))
+  (spread 1/2 (encyclify [:a :b (spread 1 (encyclify [:c :d]))])))
+
+(comment
+  (spread 3 (encyclify [:a :b (squeeze 1 (encyclify [:c :d]))]))
+  (squeeze 1 (encyclify [:a :b (spread 2 (encyclify [:c :d]))])))
+
+
+(comment
+  (squeeze 1 (encyclify [:a :b (squeeze 1 (encyclify [:c :d]))])))
+
+
 (defn scale
   ([x cycls] (scale x cycls false))
   ([x cycls cyclic?]
@@ -34,19 +122,21 @@
          n       (reduce + weights)
          offsets (reductions + 0 weights)
          factor  (/ x n)]
-     (mapcat (fn [cycl weight offset]
-               (map
-                (fn [evt]
-                  (let [start (:start evt)
-                        cycle (long start)
-                        frac  (- start cycle)
-                        new-cycle (if cyclic? (* n cycle) cycle)]
-                    (-> evt
-                        (assoc :start (+ new-cycle (* offset factor) (* frac weight factor)))
-                        (update :length #(* % weight factor))
-                        (update :period #(* % x)))))
-                cycl))
-             cycls weights offsets))))
+     (->
+      (mapcat (fn [cycl weight offset]
+                (map
+                 (fn [evt]
+                   (let [start     (:start evt)
+                         cycle     (long start)
+                         frac      (- start cycle)
+                         new-cycle (if cyclic? (* n cycle) cycle)]
+                     (-> evt
+                         (assoc :start (+ new-cycle (* offset factor) (* frac weight factor)))
+                         (update :length #(* % weight factor))
+                         (update :period #(* % x)))))
+                 cycl))
+              cycls weights offsets)
+      (c/normalize)))))
 
 
 (comment
@@ -58,9 +148,9 @@
 
 
 (comment
-  (scale 4 (encyclify [:a :b :c :d]))
-  (scale 3 (encyclify [:a :b :c :d]))
-  (scale 2 (encyclify [:a :b :c :d]))
+  (scale 4 (encyclify [:a :b :c :d]) true)
+  (scale 3 (encyclify [:a :b :c :d]) true)
+  (scale 2 (encyclify [:a :b :c :d]) true)
   (scale 3 (encyclify [:a :b (scale 2 (encyclify [:c :d]))]) true)
   (scale 2 (encyclify [:a :b (scale 2 (encyclify [:c :d]))]) true)
   (scale 4 (encyclify [:a :b (with-meta (scale 1 (encyclify [:c :d])) {:weight 2})]))
@@ -102,12 +192,99 @@
 
 (defn times-op
   [n cycl]
-  (scale 1 (repeat n cycl)))
+  (let [[start length period] (c/shape cycl)]
+    (-> (map #(assoc % :period length) cycl)
+        (->> (c/loop-cycl n))
+        (c/translate start length period))))
+
+
+(comment
+  (times-op 2 [{:start 0 :length 1 :period 2}])
+  (times-op 1 [{:start 0 :length 1/2 :period 2}
+                {:start 1/2 :length 1/2 :period 2}])
+  (times-op 1 [{:params {:init :a}, :start 0, :length 1/2, :period 2}
+               {:params {:init :b}, :start 1/2, :length 1/2, :period 2}]))
+
+;; Weights
+;; 1. Re-weight only solution
+;; 2. Run fit on the result
+
+
+(defn by-iter
+  [cycls]
+  (group-by (fn [c] (-> c first e/iter)) cycls))
+
+
+(defn weighted
+  [vals weights]
+  (let [num (count vals)
+        denom (reduce + weights)
+        rat (/ num denom)]
+    (map (fn [v w] (* v w rat)) vals weights)))
+
+
+(defn reweight
+  [cycls]
+  (mapcat
+   (fn [[iter cycls]]
+     (let [lengths (map c/length cycls)
+           weights (map weigh cycls)
+           weighted-lengths (weighted lengths weights)
+           starts (reductions + 0 weighted-lengths)]
+       (mapcat
+        (fn [c s l]
+          (c/translate c (+ s iter) l (c/period c)))
+        cycls
+        starts
+        weighted-lengths))
+     #_(squeeze 1 (map (fn [cycl]
+                       (c/translate cycl iter 1 (c/period cycl)))
+                     cycls)))
+   (by-iter cycls)))
+
+
+(defn op-merge
+  [op1 arg-cycl evt-cycl]
+  (let [[arg-cycl evt-cycl] (c/normalize-periods [arg-cycl evt-cycl])
+        cycls
+        (map
+         (fn [arg-evt]
+           (let [arg     (e/get-init arg-evt)
+                 overlap (c/slice evt-cycl (e/start arg-evt) (e/length arg-evt) :active-during)]
+             (op1 arg overlap)))
+         arg-cycl)]
+    (reweight cycls)))
+
+
+(comment
+  (op-merge times-op (fit 1 2) (fit :a :b))
+  (op-merge times-op (cyc 1 2) (fit :a :b))
+
+  (op-merge times-op (fit (el 2 1) 2) (fit :a :b :c))
+  (op-merge times-op (fit (el 2 2) 1) (fit :a :b :c))
+
+  (op-merge elongate-op (fit 2 1) (fit :a :b))
+  (op-merge elongate-op (fit 1 (cyc 1 2 3)) (fit :a :b))
+
+
+  (op-merge times-op (fit 2 (el 2 1)) (fit :a (el 2 :b)))
+  (op-merge times-op (cyc (fit 2 1) (fit 1 2)) (fit :a :b))
+
+  (op-merge elongate-op (cyc (fit 2 1) (fit 1 3)) (fit :a :b))
+
+  (op-merge elongate-op (fit 1 (cyc 1 2 3)) (fit :a :b))
+
+  (op-merge times-op (cyc 1 2) (cyc :a :b))
+
+
+  )
 
 
 (comment
   (times-op 2 (fit :a))
-  (fit :a (times-op 2 (fit :b))))
+  (fit :a (times-op 2 (fit :b)))
+  (times-op 2 [{:start 1/4 :length 1/4 :period 1}])
+  (times-op 4 [{:start 1/2 :length 1/2 :period 1}]))
 
 
 (defn x
@@ -118,6 +295,11 @@
 (defn elongate-op
   [x cycl]
   (with-meta cycl {:weight x}))
+
+
+(comment
+  (op-merge elongate-op (fit 2 1) (fit :a :b))
+  (op-merge elongate-op (cyc (fit 2 1) (fit 1)) (fit :a :b)))
 
 
 (defn el
@@ -154,9 +336,9 @@
   (fit :a (rep 2 :b))
   (cyc :a (rep 2 :b)))
 
-
 (defn spl
   [& pattern]
   (let [cycls (encyclify pattern)
         weight (reduce + (map weigh cycls))]
     (apply el weight pattern)))
+
