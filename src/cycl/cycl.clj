@@ -154,6 +154,19 @@
    [(->event :a 0 1 1) [(->event :b 1/2 1 2) (->event :c 3/2 1 2)] [(->event :d 3/4 1 1)]]))
 
 
+
+(defn scale
+  "Slows a cycle by a factor of x (or speeds it up if (< x 1)."
+  [x cycl]
+  (let [xer #(* x %)]
+    (map (fn [evt]
+           (-> evt
+               (update :start xer)
+               (update :length xer)
+               (update :period xer)))
+         cycl)))
+
+
 (defn translate
   ([cycl x]
    (translate cycl 0 x x))
