@@ -5,23 +5,19 @@
    [cycl.cycl :as c]
    [cycl.util :as u]))
 
-
 (declare fit)
-
 
 (defn ->cycl
   [thing]
   (cond
-    (c/cycl? thing)  thing
-    (sequential? thing)  (apply fit thing)
-    (e/event? thing) [thing]
-    :else            [(e/->event thing)]))
-
+    (c/cycl? thing)     thing
+    (sequential? thing) (apply fit thing)
+    (e/event? thing)    [thing]
+    :else               [(e/->event thing)]))
 
 (defn fit
   [& pattern]
   (sub/fit-op (map ->cycl pattern)))
-
 
 (comment
   (fit :a :b :c)
@@ -35,16 +31,13 @@
   (apply fit (range 4))
   (fit (list :a :b :c)))
 
-
 (defn cyc
   [& pattern]
   (sub/cycl-op (map ->cycl pattern)))
 
-
 (comment
   (cyc :a :b :c)
   (cyc :a (cyc :b :c)))
-
 
 (comment
   (fit :a (cyc :b :c))
@@ -60,11 +53,9 @@
       (op (first args) cycl)
       (sub/op-merge op (->cycl args) cycl))))
 
-
 (defn x
   [n* & pattern]
   (->op* sub/times-op n* pattern))
-
 
 (comment
   (x 2 :a)
@@ -74,14 +65,11 @@
   (x 2 (range 2))
 
   (x [2 1] [:a :b])
-  (x (cyc 2 1) [:a :b])
-  )
-
+  (x (cyc 2 1) [:a :b]))
 
 (defn el
   [x* & pattern]
   (->op* sub/elongate-op x* pattern))
-
 
 (comment
   (fit :a (el 2 :b))
@@ -99,11 +87,9 @@
   (el [2 1] :a :b)
   (el (cyc [2 1] 1) :a :b))
 
-
 (defn rep
   [n* & pattern]
   (->op* sub/repeat-op n* pattern))
-
 
 (comment
   (fit :a (rep 2 :b))
@@ -115,32 +101,56 @@
         weight (reduce + (map sub/weigh cycls))]
     (apply el weight pattern)))
 
-
 (comment
   (fit :a (spl :b :c))
   (cyc :a (spl :b :c))
   (fit :a (spl :b (el 2 :c)))
   (cyc :a (spl :b (el 2 :c))))
 
-
 (defn slow
-  [x cycl]
-  (sub/scale-op x cycl))
-
+  [x & pattern]
+  (sub/scale-op x (apply fit pattern)))
 
 (defn speed
-  [x cycl]
-  (slow (/ x) cycl))
-
-
+  [x & pattern]
+  (apply slow (/ x) pattern))
 
 (comment
   (slow 2 (fit :a :b))
   (slow 1/2 (fit :a :b))
   (slow 3/2 (fit :a :b))
   (slow 1/4 (cyc :a (cyc :b :c)))
+  (speed 2 :a :b)
   (speed 2 (fit :a :b))
   (speed 1/2 (fit :a :b))
   (speed 3/2 (fit :a :b))
   (speed 1/4 (cyc :a (cyc :b :c))))
 
+(defn may
+  [x* & pattern]
+  (->op* sub/maybe-op x* pattern))
+
+(defn degrade
+  [x* & pattern]
+  (->op* sub/degrade-op x* pattern))
+
+(comment
+  (map #(e/realize % nil)
+       (degrade [9/10 1/2] :a [:b :c])))
+
+(comment
+  (degrade 1/2 (fit :a :b)))
+
+(defn euc
+  [[k n r] & pattern]
+  (let [mask    (-> (sub/bjork (repeat k [true]) (repeat (- n k) [nil]))
+                    (u/rot (or r 0)))
+        content (apply fit pattern)
+        slots   (map #(if % content []) mask)]
+    (sub/fit-op slots)))
+
+(comment
+  (euc [3 8] :a)
+  (euc [3 8 2] :a)
+  (euc [5 8] :a :b)
+  (euc [3 8] (fit :a :b)))

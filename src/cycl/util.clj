@@ -259,8 +259,21 @@
       :else (f v))))
 
 
-(defn maybe [p v]
-  (when (< (rand) p) v))
+(defn seeded-rand
+  [seed]
+  (.nextDouble (java.util.Random. (hash seed))))
+
+
+(defn maybe
+  ([p v] (maybe p v (rand)))
+  ([p v seed]
+   (when (< (seeded-rand seed) p) v)))
+
+
+(comment
+  (maybe 0.5 :a)
+  (maybe 0.5 :a 0)
+  (maybe 0.5 :a 4))
 
 
 (defn maybe->

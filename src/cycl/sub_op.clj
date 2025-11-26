@@ -3,17 +3,14 @@
             [cycl.cycl :as c]
             [cycl.util :as u]))
 
-
 (defn weigh
   [cycl]
   (or (-> cycl meta :weight) 1))
-
 
 (defn scale-op
   "Slows a cycle by a factor of x (or speeds it up if (< x 1)."
   [x cycl]
   (c/scale x cycl))
-
 
 (defn arrange
   [f cycls]
@@ -27,7 +24,6 @@
          weights
          offsets)
         (c/normalize))))
-
 
 (defn fit-op
   "Fits a collection of cycls into a single cycle by recursively compressing starts and lengths.
@@ -46,7 +42,6 @@
              (update :length #(* % scale weight))))))
    cycls))
 
-
 (comment
   (fit-op [[{:params {:init :a}, :start 0, :length 1, :period 1}]
            [{:params {:init :b}, :start 0, :length 1, :period 1}]
@@ -61,7 +56,6 @@
              (fit-op [[{:params {:init :c}, :start 0, :length 1, :period 1}]
                       [{:params {:init :d}, :start 0, :length 1, :period 1}]])
              {:weight 2})]))
-
 
 (defn cycl-op
   "Cycls through a collection of cycls one per cycle."
@@ -79,7 +73,6 @@
              (update :period #(* % n))))))
    cycls))
 
-
 (comment
   (cycl-op [[{:params {:init :a}, :start 0, :length 1, :period 1}]
             [{:params {:init :b}, :start 0, :length 1, :period 1}]
@@ -94,7 +87,6 @@
               (cycl-op [[{:params {:init :c}, :start 0, :length 1, :period 1}]
                         [{:params {:init :d}, :start 0, :length 1, :period 1}]])
               {:weight 2})]))
-
 
 (comment
   (fit-op [[{:params {:init :a}, :start 0, :length 1, :period 1}]
@@ -116,7 +108,6 @@
         (->> (c/loop-cycl n))
         (c/translate start length period))))
 
-
 (comment
   (times-op 2 (fit :a))
   (fit :a (times-op 2 (fit :b)))
@@ -126,10 +117,9 @@
 (comment
   (times-op 2 [{:start 0 :length 1 :period 2}])
   (times-op 1 [{:start 0 :length 1/2 :period 2}
-                {:start 1/2 :length 1/2 :period 2}])
+               {:start 1/2 :length 1/2 :period 2}])
   (times-op 1 [{:params {:init :a}, :start 0, :length 1/2, :period 2}
                {:params {:init :b}, :start 1/2, :length 1/2, :period 2}]))
-
 
 (defn elongate-op
   "Increases the relative number of slots a cycl consumes in its surrounding pattern
@@ -137,12 +127,10 @@
   [x cycl]
   (with-meta cycl {:weight x}))
 
-
 (comment
   (fit (elongate-op 2 (fit :a)) :b)
   (fit (elongate-op 2 (fit :a :b)) :c)
   (cyc (elongate-op 2 (fit :a)) :c))
-
 
 (defn repeat-op
   "Repeats a cycl n times without speeding up, such that it takes more space
@@ -150,17 +138,14 @@
   [n cycl]
   (elongate-op n (times-op n cycl)))
 
-
 (comment
   (fit (repeat-op 2 (fit :a)) :b)
   (fit (times-op 2 (fit :a :b)) :c)
   (fit (repeat-op 2 (fit :a :b)) :c))
 
-
 (defn by-iter
   [cycls]
   (group-by (fn [c] (-> c first e/iter)) cycls))
-
 
 (defn re-weight
   [cycls]
@@ -177,7 +162,6 @@
         starts
         weighted-lengths)))
    (by-iter cycls)))
-
 
 (defn op-merge
   "Given an op, a cycl of arguments and an event cycl, merges the two cycls
@@ -197,7 +181,6 @@
          arg-cycl)]
     (re-weight cycls)))
 
-
 (comment
   (op-merge times-op (fit 1 2) (fit :a :b))
   (op-merge times-op (cyc 1 2) (fit :a :b))
@@ -208,7 +191,6 @@
   (op-merge elongate-op (fit 2 1) (fit :a :b))
   (op-merge elongate-op (fit 1 (cyc 1 2 3)) (fit :a :b))
 
-
   (op-merge times-op (fit 2 (el 2 1)) (fit :a (el 2 :b)))
   (op-merge times-op (cyc (fit 2 1) (fit 1 2)) (fit :a :b))
 
@@ -218,7 +200,19 @@
 
   (op-merge times-op (cyc 1 2) (cyc :a :b)))
 
+(defn degrade-op
+  [x cycl]
+  (for [evt cycl]
+    (e/update-param evt :init #(fn [] (u/maybe x %)))))
 
+(defn maybe-op
+  [x cycl]
+  (let [group-id (random-uuid)]
+    (for [evt cycl]
+      (e/update-param evt :init
+                      (fn [v]
+                        (fn [_ ctx]
+                          (u/maybe x v [group-id (-> ctx :event e/iter)])))))))
 
 (defn bjork
   ([ps os] (bjork ps os []))
