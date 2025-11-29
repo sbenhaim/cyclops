@@ -21,7 +21,8 @@
 
 (defn period
   [cycl]
-  (apply max (map e/period cycl)))
+  #_(apply max (map e/period cycl))
+  (-> cycl first e/period))
 
 
 (defn loop-cycl
@@ -45,10 +46,13 @@
 (comment
   (loop-cycl 2 [{:start 0 :period 1}])
   (loop-cycl 2 [{:start 1 :period 2}])
-  (loop-cycl 2 [{:start 5/2 :period 4}]))
+  (loop-cycl 2 [{:start 5/2 :period 4}])
+  (slice (loop-cycl [{:start 0 :period 1} {:start 1/2 :period 1}])
+         0 2 :starts-during)
+  (take 2 (loop-cycl [{:start 0 :period 1}])))
 
 
-(defn slice [cycl from length mode]
+(defn slice [from length mode cycl]
   (assert (#{:starts-during :ends-during :active-during} mode))
   (let [p             (period cycl)
         to            (+ from length)
