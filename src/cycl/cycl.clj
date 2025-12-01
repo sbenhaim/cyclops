@@ -21,8 +21,9 @@
 
 (defn period
   [cycl]
-  #_(apply max (map e/period cycl))
-  (-> cycl first e/period))
+  (if (= 1 (count cycl))
+    (e/period (first cycl))
+    (apply u/lcm (map e/period cycl))))
 
 
 (defn loop-cycl
@@ -187,8 +188,3 @@
             (update :length #(* % factor))
             (assoc :period p)))
       (with-meta md)))))
-
-
-(comment
-  (let [a #(rand-int 10)]
-    [(realize a nil) (realize a nil)]))
