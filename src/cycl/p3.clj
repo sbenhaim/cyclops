@@ -1,12 +1,11 @@
 (ns cycl.p3
   (:require [cycl.event :as e]
-            [cycl.util :as u]
-            [cycl.cycl :as c]))
+            [cycl.util :as u]))
 
 (defn ->event
   ([v] (->event v 0 1))
   ([v start length]
-   (let [evt {:start start :length length :period 1}]
+   (let [evt {:start start :length length}]
      (if (map? v)
        (assoc evt :params v)
        (assoc evt :params {:init v})))))
@@ -26,16 +25,15 @@
   (* period (quot iter-no period)))
 
 
-(defn event-slice [from length evts] ;; TODO: What is the period of an event slice?
-  (let [new-period (long (Math/ceil length))]
-    (->> evts
-         (drop-while #(< (e/start %) from))
-         (take-while #(< (e/start %) (+ from length)))
-         #_(map (fn [e] (update e :period #(max % new-period))))
-         )))
+(defn event-slice
+  [from length evts]
+  (->> evts
+       (drop-while #(< (e/start %) from))
+       (take-while #(< (e/start %) (+ from length)))))
 
 
-(defn spin [pat]
+(defn spin
+  [pat]
   (let [p (period pat)]
     (slice pat 0 p)))
 
@@ -53,26 +51,27 @@
   (let [v (->Pure :a)]
     (slice v 1/2 1/3)))
 
-(defn lcp [pats]
+(defn lcp
+  [pats]
   (if (= 1 (count pats))
     (period (first pats))
     (apply u/lcm (map period pats))))
 
 (defn arrange
   [tx-evt pats]
-  (let [weights (map weight pats)
-        n       (reduce + weights)
+  (let [weights  (map weight pats)
+        n        (reduce + weights)
         weights* (cycle weights)
-        offsets (reductions + 0 weights*)]
+        offsets* (reductions + 0 weights*)]
     (-> (mapcat
          (fn [pat weight offset]
            (let [sub-iter-no (quot offset n)
-                 sub-pat (slice pat sub-iter-no 1)]
+                 sub-pat     (slice pat sub-iter-no 1)]
              (for [evt sub-pat]
                (tx-evt evt offset weight n))))
          (cycle pats)
          weights*
-         offsets))))
+         offsets*))))
 
 (defrecord FitOp [patterns]
   Op
@@ -101,8 +100,7 @@
           (let [[_ frac] (u/mixed (e/start evt))]
             (-> evt
                 (assoc :start (+ c-start offset (* frac weight)))
-                (update :length #(* % weight))
-                (update :period #(* % n)))))
+                (update :length #(* % weight)))))
         patterns)
        (event-slice start length))))
 
@@ -114,13 +112,33 @@
 (defrecord TimesOp [n pat]
   Op
   (slice [_ start length]
-    (let [evts (slice pat start length)
-          [c-start c-length c-period] (c/shape evts)]
-      (-> (map #(assoc % :period c-length) evts)
-          (->> (c/loop-cycl n))
-          (c/translate c-start c-length c-period))))
+    (let [events  (slice pat start length)
+          c-start (-> events first e/start)]
+      (->>
+       (mapcat
+        (fn [cycl offset]
+          (for [evt cycl]
+            (-> evt
+                (update :start #(+ offset (/ (- % c-start) n)))
+                (update :length #(/ % n)))))
+        (repeat n events)
+        (iterate #(+ % (/ length n)) c-start))
+       (event-slice start length))))
   (period [_] (period pat))
   (weight [_] (weight pat)))
+
+
+(defrecord TimesOp [n pat]
+  Op
+  (slice [_ start length]
+    (map (fn [e]
+           (-> e
+               (update :start #(/ % n))
+               (update :length #(/ % n))))
+         (slice pat (* start n) (* n length))))
+  (period [_] (period pat))
+  (weight [_] (weight pat)))
+
 
 (defrecord ElongateOp [x pat]
   Op
@@ -135,6 +153,8 @@
   (weight [_] (* n (weight pat))))
 
 (defrecord DegradeOp [p pat]
+  ;; TODO: Semi Deterministic in case we need to take in multiple slices?
+  ;; And if so, how to ensure randomness when desired?
   Op
   (slice [_ start length]
     (map
@@ -146,6 +166,8 @@
   (weight [_] (weight pat)))
 
 (defrecord MaybeOp [p pat]
+  ;; TODO: Too deterministic?
+  ;; And if so, how to ensure randomness when desired?
   Op
   (slice [_ start length]
     (let [pat-period (period pat)]
@@ -159,6 +181,8 @@
   (weight [_] (weight pat)))
 
 (defrecord PickOp [pats]
+  ;; TODO: Semi Deterministic in case we need to take in multiple slices?
+  ;; And if so, how to ensure randomness when desired?
   Op
   (slice [this start length]
     (let [p (period this)
@@ -179,15 +203,20 @@
     (slice p 1 10)))
 
 
-(defrecord LitOp [events]
+(defrecord LitOp [events p w]
   Op
   (slice [this start length]
     (let [c-start (cycle-start start (period this))]
-      (->> (c/loop-cycl events)
-           (map (fn [e] (update e :start #(+ % c-start))))
-           (event-slice start length))))
-  (period [_] (c/period events))
-  (weight [_] 1))
+      (->>
+       (mapcat
+        (fn [cycl iter]
+          (for [evt cycl]
+            (-> evt (update :start #(+ % iter)))))
+        (repeat events)
+        (iterate #(+ % p) c-start))
+       (event-slice start length))))
+  (period [_] p)
+  (weight [_] w))
 
 
 (comment
@@ -204,6 +233,30 @@
   (weight [_] (weight pattern)))
 
 
+(defn c-start
+  [cycl]
+  (-> cycl first e/start))
+
+(defn c-end
+  [cycl]
+  (apply max (map e/end cycl)))
+
+(defn c-length
+  [cycl]
+  (- (c-end cycl) (c-start cycl)))
+
+(defn translate
+  [cycl beg len]
+  (let [orig-start (-> cycl first e/start)
+        orig-end   (apply max (map e/end cycl))
+        orig-len   (- orig-end orig-start)
+        factor     (/ len orig-len)]
+    (->
+     (for [evt cycl]
+       (-> evt
+           (update :start #(+ beg (* (- % orig-start) factor)))
+           (update :length #(* % factor)))))))
+
 (defn by-iter
   [pats]
   (group-by (fn [p] (-> p spin first e/iter)) pats))
@@ -217,48 +270,67 @@
        (fn [[iter pats]]
          (let [weights          (map weight pats)
                cycls            (map spin pats)
-               lengths          (map c/length cycls)
+               lengths          (map c-length cycls)
                weighted-lengths (u/weighted lengths weights)
                starts           (reductions + 0 weighted-lengths)]
            (mapcat
             (fn [c s l]
-              (c/translate c (+ s iter) l (c/period c)))
+              (translate c (+ s iter) l))
             cycls
             starts
             weighted-lengths)))
        (by-iter pats)))))
 
+(defn round-trip
+  [op arg cycl mp]
+  (let [from (-> cycl first e/start)
+        to   (apply max (map e/end cycl))
+        pat (->LitOp (translate cycl 0 1) 1 1)
+        op (op arg pat)]
+    (-> op
+        spin 
+        (translate from (- to from))
+        (->LitOp mp (weight op)))))
+
 
 (defrecord MergeOp [op arg-pat val-pat]
   Op
   (slice [_ start length]
-    (let [arg-cycl            (spin arg-pat) ;; TODO: Can we just focus on the window?
-          val-cycl            (spin val-pat)
-          [arg-cycl val-cycl] (c/normalize-periods [arg-cycl val-cycl])
+    (let [arg-cycl            (slice arg-pat start length)
+          val-cycl            (slice val-pat start length)
+          mp                  (lcp [arg-pat val-pat])
           merged
           (map
            (fn [arg-evt]
              (let [arg     (e/get-init arg-evt)
-                   overlap (c/slice (e/start arg-evt) (e/length arg-evt) :active-during val-cycl)]
-               (op arg (->LitOp overlap))))
+                   overlap (event-slice (e/start arg-evt) (e/length arg-evt) val-cycl)]
+               (round-trip op arg overlap mp)))
            arg-cycl)]
-      (->> merged re-weight (event-slice start length))))
+      (re-weight merged)))
   (period [_] (lcp [arg-pat val-pat]))
   (weight [this] (weight (slice this 0 1))))
 
 
+;; Option A: 
+
 (comment
   (spin (->MergeOp ->TimesOp (fit 2) (fit :a)))
-  (spin (->MergeOp ->TimesOp (fit 2 1) (fit :a :b)))
-  (spin (->MergeOp ->TimesOp (cyc 2 1) (fit :a :b)))
+  (spin (->MergeOp ->TimesOp (fit 1 2) (fit :a :b)))
+  (spin (->MergeOp ->TimesOp (cyc 1 2) (fit :a :b)))
   (spin (->MergeOp ->ElongateOp (fit 2 1) (fit :a :b)))
   (spin (->MergeOp ->ElongateOp (cyc (fit 2 1) 1) (fit :a :b)))
   (spin (->MergeOp ->ElongateOp (cyc (fit 2 1) (rep 2 (fit 1 1))) (fit :a :b)))
   (spin (->MergeOp ->ElongateOp (fit 2 1) (fit :a :b)))
-  (slice (->LitOp (spin (fit :a :b))) 0 1)
   (spin (->MergeOp ->RepeatOp (cyc (el 2 2) 1) (cyc :a :b)))
   (spin (cyc (rep 2 (fit 2 1)) (fit 1 1)))
-  (slice (->MergeOp ->TimesOp (cyc 2 1) (fit :a :b)) 1 1))
+  (slice (->MergeOp ->TimesOp (cyc 2 1) (fit :a :b)) 1 1)
+
+  (spin
+   (x 2 (->LitOp [(->event :b 1/2 1/2)] 1 1)))
+
+  (round-trip ->TimesOp 2 [(->event :b 1/2 1/2)])
+
+  )
 
 
 (defn ->pat [x]
@@ -306,11 +378,22 @@
 (comment
   (spin (fit :a :b :c))
   (spin (fit :a (fit :b :c)))
+
   (spin (cyc :a :b :c))
   (spin (cyc :a (cyc :b :c)))
   (spin (cyc 1 (cyc :a (cyc :b :c))))
+
   (spin (cyc :a (fit :b :c)))
-  (spin (x 2 [:a :b :c]))
+  (spin (fit :a (cyc :b :c)))
+
+  (spin (x 2 (fit :a)))
+  (spin (x 2 (fit :a :b)))
+  (spin (x 2 (fit :a (cyc :b :c))))
+  (spin (x 2 (cyc :a :b :c)))
+  (spin (x 2 (->LitOp [{:start 1/2 :length 1/4} {:start 3/4 :length 1/4}] 1)))
+
+  (slice (x 2 (fit :a)) 1 2)
+
   (spin (fit :c (cyc (el 2 :a) :b)))
   (spin (fit :b (x 2 :a)))
   (spin (fit :a (x 2 (cyc :b :c))))
@@ -326,3 +409,16 @@
 (comment
   (realize (op-merge ->TimesOp (fit 1 2) (fit :a :b)))
   (realize (op-merge ->TimesOp (cyc 1 2) (fit :a :b)) 2)) 
+
+
+(spin
+ (fit :bd (x 2 (cyc :sd :hh))))
+
+
+(slice
+ (x 2 (cyc :sd :hh))
+ 1/2 1)
+
+
+(spin
+ (fit (->LitOp [(->event :a 1 1)] 2) #_(->LitOp [(->event nil 0 1) (->event :b 1 1)] 2)))
