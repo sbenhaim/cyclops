@@ -1,6 +1,7 @@
 (ns cycl.merge
-  (:require [cycl.events :as e]
-            [cycl.util :as u]))
+  (:require [cycl.event :as e]
+            [cycl.util :as u]
+            [cycl.cycl :as c]))
 
 
 (defn left-merge
@@ -30,9 +31,10 @@
   "If b is fn, apply to a"
   [a b]
   (fn [_ ctx]
-    (cond
-      (u/fn1? b) (b (e/realize a ctx))
-      (u/fn2? b) (b (e/realize a ctx) ctx))))
+    (case (u/arity b)
+      1 (b (e/realize a ctx))
+      :variadic (b (e/realize a ctx))
+      2 (b (e/realize a ctx) ctx))))
 
 
 ;; TODO: The result of some of these merges is a fn that should be realized and provided to f
@@ -91,58 +93,35 @@
   "Logic for structure-from-left merge.
   Do not pass directly to merge fns. Used for internal logic."
   [with-fn]
-  (fn [a b]
-    (update a :params
-            #(merge-with
-              (fn [b a] (with-fn a b))
-              (:params b) %))))
+  (fn [a [b & _]]
+    [(update a :params
+             #(merge-with
+               (fn [b a] (with-fn a b))
+               (:params b) %))]))
 
 
-(defn merge-events-both
+(defn merge-events-split
     "Logic for structure-from-both merge.
   Do not pass directly to merge fns. Used for internal logic."
   [with-fn]
-  (fn [a b]
-    (let [start (max (:start a) (:start b))
-          full-start (max (e/start a) (e/start b))
-          end   (min (e/end a) (e/end b))]
-      (-> ((merge-events-left with-fn) a b)
-          (assoc :start start :length (- end full-start))))))
+  (fn [a bs]
+    (map
+     (fn [b]
+       (let [start      (max (:start a) (:start b))
+             full-start (max (e/start a) (e/start b))
+             end        (min (e/end a) (e/end b))
+             [merged]   ((merge-events-left with-fn) a [b])]
+         (assoc merged :start start :length (- end full-start))))
+     bs)))
 
 
 
 (defn merge-cycles
-  "TODO: How to better deail with all the case statements?"
-  [merge-fn a b mode]
-  (assert #{:left-merge :double-merge :op-merge} mode)
-  (let [[na nb]    (e/normalize-periods [a b])
-        slice-mode (case mode
-                     :double-merge :active-during  ;; Double merges any events that overlap
-                     :left-merge   :starts-during  ;; Left merge merges a b that *starts* during a
-                     :op-merge     :active-during) ;; Ditto op-merge
-        ]
-    (reduce
-     (fn [result e]
-       (let [overlap (e/slice nb (e/start e) (:length e) slice-mode)
-             overlap (case mode
-                       :double-merge overlap           ;; Double merge events can multiply
-                       :left-merge   (take 1 overlap)   ;; While in left merge, one a event becomes one merged event
-                       :op-merge     overlap            ;; Op merge tbd
-                       overlap)]
-         (if (seq overlap)
-           (case mode
-             :double-merge (concat result (mapv #(merge-fn e %) overlap)) ;; Double merge events multiply
-             (conj result (merge-fn e overlap)))
-           (case mode
-             :op-merge result ;; Op merge doesn't act if there is no overlap
-             (conj result [e]))))) ;; Other merges keep the event unchanged
-     []
-     na)))
-
-
-
-(defn merge-cycles*
-  ([f cycs] (merge-cycles* f cycs :double-merge))
-  ([f cycs mode]
-   (let [merge-fn (case mode :left-merge (merge-events-left f) (merge-events-both f))]
-     (reduce (fn [a b] (merge-cycles merge-fn a b mode)) cycs))))
+  [merge-fn cycl-a cycl-b]
+  (mapcat
+   (fn [a]
+     (let [overlap (c/slice-active cycl-b (e/start a) (e/length a))]
+       (if (seq overlap)
+         (merge-fn a overlap)
+         [a])))
+   cycl-a))

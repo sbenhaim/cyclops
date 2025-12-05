@@ -170,8 +170,9 @@
 
 
 (defn p2
+  "Partially apply second arg."
   [f a]
-  #((p f %) a))
+  (fn [b] (f b a)))
 
 
 (defn cmp
@@ -185,6 +186,7 @@
 
 
 (defn defer
+  "Compose or partial, depending on the second arg."
   [f arg-or-fn]
   (if (fn? arg-or-fn)
     (cmp f arg-or-fn)

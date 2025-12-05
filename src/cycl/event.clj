@@ -21,9 +21,10 @@
     (if-not (= (:param ctx) :fn)
       (case (arity this)
         0 (realize (this) ctx)
+        :variadic (realize (this) ctx)
         1 (realize (this nil) ctx)
         2 (realize (this nil ctx) ctx)
-        this)
+        (partial this nil ctx))
       this)) ; Or (defer this ctx)?
 
   clojure.lang.ISeq
@@ -36,22 +37,28 @@
       (compare (f this) (f that))))
 
 
+(defn realize-event
+  [e ctx]
+  (update e :params
+          #(into {}
+                 (for [[k v] %]
+                   [k (realize v (assoc ctx :param k :event e))]))))
 
-(defrecord Event [params start length period]
+
+(defrecord Event [params start length]
   Comparable
   (compareTo [this that]
     (event-compare this that))
   DoYouRealize?
   (realize [this ctx]
-    (let [realized (into {} (for [[k v] params] [k (realize v (assoc ctx :param k :event this))]))]
-      (assoc this :params realized))))
+    (realize-event this ctx)))
 
 
 (defn ->event
-  ([init] (->event init 0 1 1))
-  ([init start length period]
+  ([init] (->event init 0 1))
+  ([init start length]
    (let [init (if (map? init) init {:init init})]
-     (->Event init start length period))))
+     (->Event init start length))))
 
 
 (comment
@@ -61,6 +68,7 @@
 
 
 (defn event? [evt?]
+  ;; TODO:
   (number? (:start evt?)))
 
 
