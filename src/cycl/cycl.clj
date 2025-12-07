@@ -62,7 +62,7 @@
 
 (defn scale
   "Slows a cycle by a factor of x (or speeds it up if (< x 1)."
-  [x cycl]
+  [cycl x]
   (let [xer #(* x %)]
     (map (fn [evt]
            (-> evt
@@ -73,9 +73,8 @@
 
 (defn translate
   [cycl beg len]
-  (let [orig-start (-> cycl first e/start)
-        orig-end   (apply max (map e/end cycl))
-        orig-len   (- orig-end orig-start)
+  (let [orig-start (start cycl)
+        orig-len   (length cycl)
         factor     (/ len orig-len)]
     (->
      (for [evt cycl]

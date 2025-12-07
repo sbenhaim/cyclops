@@ -1,364 +1,123 @@
 (ns cycl.ops
   "(👁️)"
   (:require
-   [cycl.pattern :as p]
+   [cycl.pattern :as p :refer [spin ->pat]]
    [cycl.util :as u :refer [smart-splat collate]]
    [cycl.merge :as m]
    [cycl.music :as mu]
-   [cycl.events :as e]))
+   [cycl.event :as e]))
 
 
-(defmulti evts type)
+;; ops
 
+(defn fit [& pat]
+  (p/->Fit (map ->pat pat)))
 
-(defmethod evts :default [rable]
-  (e/realize rable nil))
+(defn cyc [& pat]
+  (p/->Cyc (map ->pat pat)))
 
+(defn x [n & pat]
+  (p/->OpMerge p/->Times (->pat n) (->pat pat)))
 
-(comment (evts [:a :b :c]))
-(comment (evts (n :a :b :c)))
+(defn el [x & pat]
+  (p/->OpMerge p/->Elongate (->pat x) (->pat pat)))
 
+(defn spl [& pat]
+  (p/->Splice (map ->pat pat)))
 
-(defmethod evts cycl.pattern.Operatic [op]
-  (-> op p/->cycl (e/realize nil)))
+(defn rep [n & pat]
+  (p/->OpMerge p/->Repeat (->pat n) (->pat pat)))
 
+(defn degrade [p & pat]
+  (p/->OpMerge p/->Degrade (->pat p) (->pat pat)))
 
-(defn ->op
-  ([op children]
-   (op (u/smart-splat children)))
-  ([op argpat children]
-   (let [kids (u/smart-splat children)
-         args (u/gimme-vec argpat)]
-     (op args kids))))
+(defn may [p & pat]
+  (p/->OpMerge p/->Maybe (->pat p) (->pat pat)))
 
+(defn pick [& pats]
+  (p/->Pick (map ->pat pats)))
 
-(defn fit
-  "Squeezes it's children into the confining space."
-  [& children]
-  (->op p/->FitOp children))
+(defn fast [x & pat]
+  (p/->Speed x (->pat pat)))
 
-
-(comment
-  (require '[dev-utils.portal :refer [tap-type>]])
-  (require '[cyclops.viz :refer [vega-cycl]])
-
-  (defn view
-    ([c] (view c nil))
-    ([c param]
-     (tap-type> :vega-lite (vega-cycl (evts c) param))))
-
-  (evts (fit :a :b))
-
-  (p/->cycl
-   (fit :a (cyc :b (fit 2 :c))))
-
-  (evts (fit :a (cyc :b (fit 2 :c))))
-
-  (evts (p/basic-ctrl :s (fit :a (cyc :b (fit 2 :c)))))
-
-  ,)
-
-
-(defn x [n-pat & children]
-  (->op p/->TimesOp* n-pat children))
-
-
-(comment
-  (evts (x 2 :a))
-  (evts (cyc (x 2 :a))))
-
-(defn -x [n & children]
-  (->op p/->TimesOp n children))
-
-
-
-(comment
-  (evts (-x 2 (cyc :sd :bd))))
-
-
-(defn chop
-  [& numpat]
-  (let [evts      (-> numpat u/smart-splat p/->cycl)
-        timeses   (map #(x (e/get-init %) %) evts)
-        pre-chops (p/->cycl timeses)]
-    pre-chops
-    #_(for [chp pre-chops]
-        (-> chp
-            (e/assoc-param :begin (:start chp))
-            (e/assoc-param :end (e/end chp))
-            (e/dissoc-param :init)))))
-
-
-(chop 2)
-
-(comment
-  (evts (<| (chop 2) (s :bd))))
-
-
-(comment
-
-  (evts (x 2 :a))
-  (evts (s (x 2 :a)))
-  (->> [:a :b] (x 2) evts)
-  (->> [:a (x 2 :b) :c] evts)
-  (->> [:a :b] (x [2 2]) evts)
-  (->> [:a :b] (x [2 2 1]) evts)
-
-  (->> [:a :b] (x 2) view)
-  (->> [:a (x 2 :b) :c] view)
-  (->> [:a :b] (x [2 2]) view)
-  (->> [:a :b] (x [2 2 1]) view)
-
-  (e/realize (s :a :b) nil)
-
-
-  )
-
-
-(defn spl
-  "Splices events into parent context adjusting segmentation."
-  [& children]
-  (->op p/->SpliceOp children))
-
-
-(comment
-  (-> [:a :b (spl :c :d)] view))
-
-
-(defn rep [n-pat & children]
-  (->op p/->RepOp* n-pat children))
-
-
-(comment
-  (evts (rep 2 :sd))
-  (evts (rep [2 2 1] :sd :bd))
-  (evts [:a (rep [2 3] :b :c) :d])
-
-  (view (rep 2 :sd))
-  (view (rep [2 2] :sd :bd))
-  (view [:a (rep [1 2] :b :c) :d])
-
-  ,)
-
-
-(defn slow [x-pat & children]
-  (->op p/->SlowOp* x-pat children))
-
-
-
-(comment
-
-  (evts (slow 3/2 :bd))
-  (evts (slow [2 2] :bd :sd))
-  (evts (slow 2 :bd :sd))
-  (evts (slow [2 1 2] :bd :sd :cr))
-
-  (view (slow [2 2] :bd :sd))
-  (view (slow 2 :bd :sd))
-  (evts (slow [2 1 2] :bd :sd :cr))
-
-  (evts (cyc (n :a :b :c)))
-  (evts (fit (n :a :b :c)))
-  (evts (euc [3 5] (n :a :b)))
-
-  )
-
-
-(defn cyc
-  "Stretches children across n cycles."
-  [& children]
-  (->op p/->CyclOp children))
-
-
-(comment
-  (->> (cyc :a [:b :c]) evts)
-  (->> (cyc :a [:b :c]) view)
-  (view [(cyc :a :c) :b])
-  )
-
-
-(defn may
-  [x-pat & children]
-  (p/->MaybeOp* (u/gimme-vec x-pat) (u/smart-splat children) :all))
-
-
-(comment
-  (->> (may [1 1/2] :a :b :c :d) evts (tap-type> :table)))
-
-
-(defn degrade
-  [x-pat & children]
-  (p/->MaybeOp* (u/gimme-vec x-pat) (u/smart-splat children) :per))
-
-(comment
-  (->> (degrade [1/2] [:a :b :c :d]) evts (tap-type> :table))
-  (->> (degrade [1 1/2] [:a :b :c :d]) evts (tap-type> :table)))
-
-(comment
-  (evts (may 0.5 :a :b)) ; per
-  (evts (may 0.5 [[:a :b]])) ; all
-  (evts (degrade 0.5 :a :b))
-  (evts (may [1 0.5] :a :b))
-  ;; same as
-  (evts (may [1 0.5] :a :b)))
-
+(defn slow [x & pat]
+  (p/->Speed (/ x) (->pat pat)))
 
 (defn euc
   "Euclidian rhythm of `k` active of `n` switches, optionally rotated by `r`."
-  [[k n & [r]] & children]
-  (p/->EuclidOp k n r (smart-splat children)))
-
-
-(comment
-  (-> (euc [5 8] :a) view)
-  (let [p (atom false)]
-    (-> (euc [5 8] (fn [] (swap! p not) (if @p :a :b)))
-        n evts view))
-  (-> (euc [5 8] :a :b) view)
-  (-> (euc [5 8] [:a :b [:c :d]]) view))
-
-(defn pick
-  "Each loop, randomly chooses one of its children."
-  [& children]
-  (->op p/->PickOp children))
-
-
-(comment
-  (def ptop (atom nil))
-  (tap> ptop)
-  (reset! ptop (with-meta (vega-cycl (evts [:a :b :c]))
-                 {:portal.viewer/default :portal.viewer/vega-lite}))
-  (def cycl (atom (vega-cycl (p/->cycle [:a (pick :b :c)]) :init)))
-  (tap> cycl)
-  (reset! cycl (vega-cycl (p/->cycle [:a :b :c ])))
-  (evts [:a (pick :b :c)]))
-
-
-(defn el
-  [n-pat & children]
-  (->op p/->ElongateOp* n-pat children))
-
-
-(comment
- (-> (fit :a (el 2 :b)) evts)
- (-> [:a (el 2 :b)] fit view)
- )
-
+  [[k n & [r]] & pat]
+  (p/->Euclid k n r (->pat pat)))
 
 (defn stack
-  "Plays contained patterns or events simultaneously. Can be used to play chords."
-  [& children]
-  (->op p/->StackOp children))
-
-
-(def stk stack)
-
-
-(comment
-  (view (stack [:a :b] [nil :c :d]))
-  (view (stk [:a :b] [nil :c :d])))
-
-
-(defn rev
-  [& children]
-  (let [cycl (p/->cycl children)
-        p    (e/period cycl)]
-    (->> cycl
-         (map (fn [e] (assoc e :start (- p (:start e) (:length e)))))
-         sort)))
-
-
-(comment
-
-  (-> (rev :a :b :c) evts)
-  (-> (rev [:a :b] :c) evts)
-  (-> (rev (cyc [:a :b] :c)) evts)
-  (-> [:a [:b :c]] fit rev evts)
-  (-> [:a [:b :c]] rev fit evts) ;; Applied to collection => Just `reverse`. Nah, because [:a :b :c] should usually == (fit :a :b :c)
-
-  ;; TODO
-  (-> (+| (n (mu/chord :cm7)) (s :superpiano)) rev evts) ;; Applied to Cycle. Recursive
-  (-> (+| (rev (mu/chord :cm7)) (s :superpiano)) evts) ;; Applied to collection
-
-
-  )
+  [& pats]
+  (p/->Stack (->pat pats)))
 
 
 ;; Controls
 
-
-;; Controls
-;; TODO: Just move to op?
+;; Control xfns
 
 
-(defn ->cycl?
-  "If you have good reason to believe somethign *should* be a `cycl`, use this
-  function to make sure it is one."
-  [thing]
+(defn rest? [v]
+  (or (nil? v) (#{:- "~"} v)))
+
+
+(defn parse-note
+  [n]
   (cond
-    (e/cycl? thing) thing
-    (p/op? thing)   (p/->cycl thing)
-    :else           (p/->cycl [thing])))
+    (rest? n)    nil
+    (keyword? n) (mu/note n)
+    (string? n)  (mu/note n)
+    (number? n)  (float n)
+    :else        n))
 
 
-(defn ->param
-  [param value-tx pat]
-  (->> pat
-       smart-splat
-       ->cycl?
-       (map (fn [evt] (e/reassoc-param
-                       evt
-                       :init
-                       param
-                       #(u/defer (u/collate value-tx) %))))))
+(defn parse-sound
+  [s]
+  (cond
+    (rest? s)    nil
+    (keyword? s) (name s)
+    :else        s))
 
-(defn ->const
-  [param val pat]
-  (->> pat
-       smart-splat
-       ->cycl?
-       (map (fn [evt] (assoc-in
-                       evt
-                       [:params param]
-                       val)))))
+
+
+(defn ->ctrl
+  [sym xfn pat]
+  (p/->Control sym xfn (->pat pat)))
+                                
+
+(defn n [& pat]
+  (->ctrl :n float pat))
+
+
+(defn s [& pat]
+  (->ctrl :s parse-sound pat))
+
 
 
 (defn f
   "Timed fns"
   [& pat]
-  (->> pat
-       (->param :fn p/parse-sound)
-       (->const :target :fn)))
+  ;; TODO
+  (->ctrl :fn (fn [v] (fn [merge-v ctx] #(v))) pat))
 
 
 (defn s
   "Samples and synths"
   [& pat]
-  (->param :s p/parse-sound pat))
-
-
-(comment
-  (-> (s :c :a :f :e) rev evts)
-  (-> [(stack :c :d) :a :f :e] s (view :s))
-  (view (s (rep 2 :sd :bd))))
-
-
-(defn n
-  "Numbers"
-  [& pat]
-  (->param :n float pat))
+  (->ctrl :s p/parse-sound pat))
 
 
 (defn mnt
   "Midi notes"
   [& pat]
-  (->param :note p/parse-note pat))
+  (->ctrl :note p/parse-note pat))
 
 
 (defn nt
   "Notes"
   [& pat]
-  (->param :note #(- (p/parse-note %) 60) pat))
+  (->ctrl :note #(- (p/parse-note %) 60) pat))
 
 
 (comment
@@ -373,117 +132,107 @@
 (defn pan
   "Left 0.0, Right 1.0"
   [& pat]
-  (->param :pan #(-> % (min 1) (max 0) float) pat))
+  (->ctrl :pan #(-> % (min 1) (max 0) float) pat))
 
 
 (defn decay
   [& pat]
-  (->param :pan float pat))
+  (->ctrl :decay float pat))
 
 
 (defn voice
   [& pat]
-  (->param :voice float pat))
+  (->ctrl :voice float pat))
 
 
 (defn octave
   [& pat]
-  (->param :octave int pat))
+  (->ctrl :octave int pat))
 
 
 (defn accelerate
   [& pat]
-  (->param :accelerate float pat))
+  (->ctrl :accelerate float pat))
 
 
 (defn speed
   "Left 0.0, Right 1.0"
   [& pat]
-  (->param :speed float pat))
+  (->ctrl :speed float pat))
 
 
 (defn vowel
   ":a :e :i :o :u"
   [& pat]
-  (->param :vowel name (smart-splat pat)))
-
-
-(comment (view (vowel :a [:e :i :o] :u))
-         (evts (vowel {:init [:a :b]} [:e :i :o] :u)))
+  (->ctrl :vowel name pat))
 
 
 (defn room
   "Reverb room size"
   [& pat]
-  (->param :room float (smart-splat pat)))
+  (->ctrl :room float pat))
 
 
 (defn size
   "Reverb size"
   [& pat]
-  (->param :size float (smart-splat pat)))
+  (->ctrl :size float  pat))
 
 
 (defn dry
   "Reverb dry"
   [& pat]
-  (->param :dry float (smart-splat pat)))
+  (->ctrl :dry float pat))
 
 
 (defn legato
   "Play note for `n` segments, then cut."
   [& pat]
-  (->param :legato float (smart-splat pat)))
+  (->ctrl :legato float pat))
 
 
-(defn ->cycl?* [cycls]
-  (map ->cycl? cycls))
+;; Start here
 
-
-(comment
-  (->cycl?* [[:a :b :c] (cyc 1 2 3) [(e/->event :a 0 1 1)] :a]))
-
-
-(defn f| [f & cycls]
-  (m/merge-cycles* f (-> cycls ->cycl?*)))
+(defn f| [f & pats]
+  (p/->EventMerge (m/merge-events-split f) pats))
 
 
 (comment
 
-  (-> (f| m/left-merge (s :a) (s :b)) evts)
-  (-> (f| m/left-merge [:a] [:b]) evts)
-  (-> (f| m/left-merge :a :b) evts)
-  (-> (f| m/left-merge (s :a) (n :b)) evts)
-  (-> (f| m/left-merge [:a] [:b]) evts)
+  (-> (f| m/left-merge (s :a) (s :b)) spin)
+  (-> (f| m/left-merge [:a] [:b]) spin)
+  (-> (f| m/left-merge :a :b) spin)
+  (-> (f| m/left-merge (s :a) (n :b)) spin)
+  (-> (f| m/left-merge [:a] [:b]) spin)
 
-  (-> (f| (m/fn-merge vector) (s :a) (n :b)) evts)
-  (-> (f| (m/fn-merge vector) (s :a) (s :b)) evts)
-  (-> (f| (m/fn-merge #(and %1 %2)) [1 2 nil] [:a :b :c]) evts)
+  (-> (f| (m/fn-merge vector) (s :a) (n :b)) spin)
+  (-> (f| (m/fn-merge vector) (s :a) (s :b)) spin)
+  (-> (f| (m/fn-merge #(and %1 %2)) [1 2 nil] [:a :b :c]) spin)
 
-  (-> (f| (m/fn-merge m/stack-merge) [1] [2]) evts)
+  (-> (f| (m/fn-merge m/stack-merge) [1] [2]) spin)
 
-  (-> (f| m/or-merge [1 2 nil] [:a :b :c]) evts)
-  (-> (f| m/or-merge (fit 1 2 nil) [:a :b :c]) evts)
+  (-> (f| m/or-merge [1 2 nil] [:a :b :c]) spin)
+  (-> (f| m/or-merge (fit 1 2 nil) [:a :b :c]) spin)
 
-  (-> (f| m/apply-merge [60 61 62] [inc #(* 2 %)]) evts)
-  (-> (f| m/apply-merge [60 61 62] [#(* 2 %)]) evts)
-  (-> (f| m/apply-merge [60 61 62] [inc inc #(* 2 %)]) evts)
-  (-> (f| m/apply-merge [60 61 62] [inc #(* 2 %)]) evts)
-
-
-
-  (-> (f| (m/apply|fn-merge vector) [1 2 3] [inc #(* 2 %) 4]) evts)
-  (-> (f| m/apply|left-merge [:a :b] [name :c]) evts)
-  (-> (f| m/apply|stack-merge [:a :b] [name :c] [:d :e]) evts)
-
-  (-> (f| m/apply|stack-merge (s 1) (s :b)) evts)
-  (-> (f| m/apply|stack-merge (n 1) (s :b)) evts)
+  (-> (f| m/apply-merge [60 61 62] [inc #(* 2 %)]) spin)
+  (-> (f| m/apply-merge [60 61 62] [#(* 2 %)]) spin)
+  (-> (f| m/apply-merge [60 61 62] [inc inc #(* 2 %)]) spin)
+  (-> (f| m/apply-merge [60 61 62] [inc #(* 2 %)]) spin)
 
 
-  (-> (f| (m/apply|maths|or|stack-merge +) [6 6 6] [2 inc :d]) evts)
-  (-> (f| (m/apply|maths|or|stack-merge -) [nil 0 nil] [2 inc :d]) evts)
-  (-> (f| (m/apply|maths|or|stack-merge +) [nil 0 :c] [2 inc :d]) evts)
-  (-> (f| (m/apply|maths|or|stack-merge +) [nil 0 :c] [2 inc name]) evts)
+
+  (-> (f| (m/apply|fn-merge vector) [1 2 3] [inc #(* 2 %) 4]) spin)
+  (-> (f| m/apply|left-merge [:a :b] [name :c]) spin)
+  (-> (f| m/apply|stack-merge [:a :b] [name :c] [:d :e]) spin)
+
+  (-> (f| m/apply|stack-merge (s 1) (s :b)) spin)
+  (-> (f| m/apply|stack-merge (n 1) (s :b)) spin)
+
+
+  (-> (f| (m/apply|maths|or|stack-merge +) [6 6 6] [2 inc :d]) spin)
+  (-> (f| (m/apply|maths|or|stack-merge -) [nil 0 nil] [2 inc :d]) spin)
+  (-> (f| (m/apply|maths|or|stack-merge +) [nil 0 :c] [2 inc :d]) spin)
+  (-> (f| (m/apply|maths|or|stack-merge +) [nil 0 :c] [2 inc name]) spin)
 
 
   ,)

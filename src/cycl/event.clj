@@ -119,8 +119,8 @@
   (update e :params #(dissoc % param)))
 
 
-(defn start [ e]
-  (+ (:start e)))
+(defn start [e]
+  (:start e))
 
 
 (defn iter [e]
