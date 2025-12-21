@@ -1,51 +1,29 @@
 (ns cycl.event
   (:require
-   [cycl.util :as u :refer [arity p2]]))
+   [cycl.util :as u :refer [p2]]
+   [cycl.val :refer [realize]]
+   [cycl.val :as v]))
 
 
+(defn realize-event
+  [e ctx]
+  (let [ctx (merge ctx e)]
+    (update e :params #(reduce-kv
+                        (fn [m k v]
+                          (assoc m k (realize v (assoc ctx :param k))))
+                        {} %))))
 
-(defprotocol DoYouRealize?
-  (realize [this ctx]))
-
-
-(extend-protocol DoYouRealize?
-
-  nil
-  (realize [_ _] nil)
-
-  java.lang.Object
-  (realize [this _ctx] this)
-
-  clojure.lang.IFn
-  (realize [this ctx]
-    (if-not (= (:param ctx) :fn)
-      (case (arity this)
-        0 (realize (this) ctx)
-        :variadic (realize (this) ctx)
-        1 (realize (this nil) ctx)
-        2 (realize (this nil ctx) ctx)
-        (partial this nil ctx))
-      this)) ; Or (defer this ctx)?
-
-  clojure.lang.ISeq
-  (realize [this ctx] (map (p2 realize ctx) this)))
 
 
 (defn event-compare
   [this that]
   (let [f (juxt :start :length)]
-      (compare (f this) (f that))))
+    (compare (f this) (f that))))
 
 
-(defn realize-event
-  [e ctx]
-  (update e :params
-          #(into {}
-                 (for [[k v] %]
-                   [k (realize v (assoc ctx :param k :event e))]))))
 
 
-(defrecord Event [params start length]
+#_(defrecord Event [params start length]
   Comparable
   (compareTo [this that]
     (event-compare this that))
@@ -57,14 +35,11 @@
 (defn ->event
   ([init] (->event init 0 1))
   ([init start length]
-   (let [init (if (map? init) init {:init init})]
-     (->Event init start length))))
-
-
-(comment
-  (realize (->event #(rand) 0 1/2 0 1) nil)
-  (event?
-   (realize (->Event {:init #(rand) :else 5 :ctx identity} 0 1/2 0 1) nil)))
+   #_(->Event init start length)
+   (let [params (if (and (map? init) (not (record? init)))
+                  init
+                  {:init init})]
+     {:params params :start start :length length})))
 
 
 (defn event? [evt?]

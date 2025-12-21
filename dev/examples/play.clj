@@ -2,7 +2,7 @@
   {:clj-kondo/ignore true}
   (:require
    [cycl.pattern :as p]
-   [cycl.events :as e]
+   [cycl.event :as e]
    [cycl.merge :as m]
    [cycl.util :refer [toggle!] :as u]
    [cycl.ing :as c :refer [start! shutdown! o once sh! pause! now!]]
@@ -25,15 +25,10 @@
 (o 0 (s :bd))
 
 ;; Nothing? Start the clock.
-
 (start!)
 
 ;; Clear the o 0 pattern
 (o 0)
-;; or
-(o 0 nil)
-;; or
-(o 0 [])
 ;; Re-eval above to start it again
 
 ;; Play once in time
@@ -49,9 +44,8 @@
 (o 0 (s :bd (x 4 :sd)))
 (o 0)
 
-
 ;; Add a pattern on another layer
-(now! (s :supersaw) (nt :c :c# :d :d#))
+(o 1 (s :supersaw) (nt :c :c# :d :d#))
 (o 1 (s :superpiano) (nt :c :c# :d :d#))
 (o 1)
 (o 1 (s :piano) (n 4) (nt :c :eb :g :b))

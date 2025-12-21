@@ -2,11 +2,16 @@
   "(👁️)"
   (:require
    [cycl.pattern :as p :refer [spin ->pat]]
-   [cycl.util :as u :refer [smart-splat collate]]
    [cycl.merge :as m]
    [cycl.music :as mu]
-   [cycl.event :as e]))
+   [cycl.event :as e]
+   [cycl.cycl :as c]
+   [cycl.val :as v]))
 
+
+(defn spin*
+  [pat]
+  (-> pat spin (c/realize-cycl {})))
 
 ;; ops
 
@@ -50,7 +55,28 @@
 
 (defn stack
   [& pats]
-  (p/->Stack (->pat pats)))
+  (p/->Stack (map ->pat pats)))
+
+(defn chop [n & pat]
+  (p/->OpMerge p/->Chop (->pat n) (->pat pat)))
+
+(defn striate [n & pat]
+  (p/->OpMerge p/->Striate (->pat n) (->pat pat)))
+
+(defn striate-by
+  "Striate with adjustable slice length. `n` slices, each `len` of sample."
+  [[n len] & pat]
+  (p/->StriatBy n len (->pat pat)))
+
+(defn rev [& pat]
+  (p/->Reverse (->pat pat)))
+
+
+(comment
+  (spin
+   (rev 1 2 3 4))
+
+  (-> (jux rev (n 1 2 3 4)) spin*))
 
 
 ;; Controls
@@ -82,8 +108,8 @@
 
 
 (defn ->ctrl
-  [sym xfn pat]
-  (p/->Control sym xfn (->pat pat)))
+  [kw xfn pat]
+  (p/->Control kw xfn (->pat pat)))
                                 
 
 (defn n [& pat]
@@ -93,6 +119,9 @@
 (defn s [& pat]
   (->ctrl :s parse-sound pat))
 
+
+(defn param [kw & pat]
+  (->ctrl kw identity pat))
 
 
 (defn f
@@ -105,19 +134,19 @@
 (defn s
   "Samples and synths"
   [& pat]
-  (->ctrl :s p/parse-sound pat))
+  (->ctrl :s parse-sound pat))
 
 
 (defn mnt
   "Midi notes"
   [& pat]
-  (->ctrl :note p/parse-note pat))
+  (->ctrl :note parse-note pat))
 
 
 (defn nt
   "Notes"
   [& pat]
-  (->ctrl :note #(- (p/parse-note %) 60) pat))
+  (->ctrl :note #(- (parse-note %) 60) pat))
 
 
 (comment
@@ -193,31 +222,97 @@
 
 ;; Start here
 
+
+(comment
+  ;; vfns
+  ;; nondeterminism (nd)
+  (-> (fit #(rand)) spin*)
+
+  ;; application (appl)
+  (-> (f| m/apply-merge (fit 2) (fit inc #(* 2 %) (constantly :a))) spin*)
+  ;; NOTE: Supplied nil of no apply value available
+
+  ;; merge fn (mfn)
+  (-> (f| (m/fn-merge +) (fit 1 2 3) (fit 4 5) (fit 6)) spin*)
+
+  ;; appl + nd
+  (-> (f| m/apply-merge (fit #(rand-int 10)) (fit inc #(* 2 %))) spin*) ;; TODO: better if it is the same rand result?
+
+  ;; mfn + appl
+  (-> (f| (m/apply|fn-merge +) (fit 2 3 4) (fit inc 5 #(* 2 %))) spin*)
+  ;; 
+  ;; mfn + nd
+  (-> (f| (m/fn-merge +) (fit #(rand-int 10)) (fit 3)) spin*)
+
+  ;; mfn + appl + nd
+  (-> (f| (m/apply|fn-merge +) (fit #(rand-int 10) #(rand-int 100)) (fit inc 50)) spin*)
+  (-> (f| (m/apply|fn-merge +) (fit #(rand-int 10)) (fit #(* 2 %)) (fit -10)) spin*)
+
+  ;; context fn (cfn)
+  (let [tscale (fn [_ ctx] (-> ctx :event :start (* 2)))]
+    (-> (fit tscale tscale tscale) spin*))
+
+  (let [debug (fn [_ ctx] ctx)]
+    (-> (fit debug debug) spin*))
+
+  ;; cfn + appl
+  ;; cfn + appl + nd
+  ;; cfn + appl + nd + mfn
+  ;; time fn (tfn)
+  ;; multiple applications?
+
+  )
+
 (defn f| [f & pats]
-  (p/->EventMerge (m/merge-events-split f) pats))
+  (p/->EventMerge (m/merge-events-split f) (map ->pat pats)))
+
 
 
 (comment
 
+  (spin* (f| +))
+  (->pat nil)
+
   (-> (f| m/left-merge (s :a) (s :b)) spin)
   (-> (f| m/left-merge [:a] [:b]) spin)
   (-> (f| m/left-merge :a :b) spin)
-  (-> (f| m/left-merge (s :a) (n :b)) spin)
+  (-> (f| m/left-merge (s :a) (n 1)) spin)
   (-> (f| m/left-merge [:a] [:b]) spin)
 
-  (-> (f| (m/fn-merge vector) (s :a) (n :b)) spin)
+  (-> (f| (m/fn-merge vector) (s :a) (n 1)) spin)
   (-> (f| (m/fn-merge vector) (s :a) (s :b)) spin)
-  (-> (f| (m/fn-merge #(and %1 %2)) [1 2 nil] [:a :b :c]) spin)
+  (-> (f| (m/fn-merge vector) (s :a) (s :b)) spin*)
+  (-> (f| (m/fn-merge #(and %1 %2)) [1 2 nil] [:a :b :c]) spin*)
 
   (-> (f| (m/fn-merge m/stack-merge) [1] [2]) spin)
 
   (-> (f| m/or-merge [1 2 nil] [:a :b :c]) spin)
   (-> (f| m/or-merge (fit 1 2 nil) [:a :b :c]) spin)
 
-  (-> (f| m/apply-merge [60 61 62] [inc #(* 2 %)]) spin)
-  (-> (f| m/apply-merge [60 61 62] [#(* 2 %)]) spin)
+  (-> (f| m/apply-merge [60 61 62] [inc #(* 2 %)]) spin*)
+  (-> (f| m/apply-merge [60 61 62] [#(* 2 %)]) spin*)
   (-> (f| m/apply-merge [60 61 62] [inc inc #(* 2 %)]) spin)
   (-> (f| m/apply-merge [60 61 62] [inc #(* 2 %)]) spin)
+
+
+  :dbg
+  (-> (f| m/apply-merge [0] [inc]) spin)
+
+  (-> (f| m/apply|stack-merge [v/rand1]) spin*)
+  (-> (f| m/apply|stack-merge [1 5 10] [v/randn]) spin*)
+  (-> (f| m/apply|stack-merge [{:ampl 2}] [v/rand*]) spin*)
+  (-> (f| m/apply|stack-merge [2] [v/rand*]) spin*)
+
+
+  (-> (f| m/apply|stack-merge [v/sin1]) spin*)
+
+  (-> (f| m/apply|stack-merge [1] [#(v/sin :a %)]) spin*)
+  (-> (f| m/apply|stack-merge [5] [#(v/sin :a %)]) spin*)
+
+  (-> (f| m/apply|stack-merge [{:ampl 1}] [(v/sin)]) spin*)
+  (-> (f| m/apply|stack-merge [{:ampl 2}] [(v/sin)]) spin*)
+  (-> (f| m/apply|stack-merge [{:ampl 2} {:ampl 3} {:ampl 4}] [v/rand*]) spin*)
+
 
 
 
@@ -229,7 +324,7 @@
   (-> (f| m/apply|stack-merge (n 1) (s :b)) spin)
 
 
-  (-> (f| (m/apply|maths|or|stack-merge +) [6 6 6] [2 inc :d]) spin)
+  (-> (f| (m/apply|maths|or|stack-merge +) [6 6 6] [2 inc :d]) spin*)
   (-> (f| (m/apply|maths|or|stack-merge -) [nil 0 nil] [2 inc :d]) spin)
   (-> (f| (m/apply|maths|or|stack-merge +) [nil 0 :c] [2 inc :d]) spin)
   (-> (f| (m/apply|maths|or|stack-merge +) [nil 0 :c] [2 inc name]) spin)
@@ -237,36 +332,38 @@
 
   ,)
 
+(comment
+  (fit 0) [(+ 1) (+ 3) (+ 10)])
 
-(defn f> [f & cycles]
-  (m/merge-cycles* f cycles :left-merge))
-
-
-(defn <f [f & cycles]
-  (m/merge-cycles* f (reverse cycles) :left-merge))
+(defn f> [f & pats]
+  (p/->EventMerge (m/merge-events-left f) (map ->pat pats)))
 
 
-(defn <| [& cycles]
-  (apply f| m/left-merge cycles))
+(defn <f [f & pats]
+  (p/->EventMerge (m/merge-events-left f) (map ->pat (reverse pats))))
 
 
-(defn |> [& cycles]
-  (apply f| m/left-merge (reverse cycles)))
+(defn <| [& pats]
+  (apply f| m/left-merge pats))
+
+
+(defn |> [& pats]
+  (apply f| m/left-merge (reverse pats)))
 
 
 (comment
-  (evts (<| (s :a :b :c) (s :c :d :e)))
-  (evts (|> (s :a :b :c) (s :c :d :e)))
-  (evts (|> (s :a :b :c) (n 1 2 3))))
+  (spin (<| (s :a :b :c) (s :c :d :e)))
+  (spin (|> (s :a :b :c) (s :c :d :e)))
+  (spin (|> (s :a :b :c) (n 1 2 3))))
 
 
-(defn a| [& cycles]
-  (apply f| m/apply-merge cycles))
+(defn a| [& pats]
+  (apply f| m/apply-merge pats))
 
 
 
-(defn s| [& cycles]
-  (apply f| m/apply|stack-merge cycles))
+(defn s| [& pats]
+  (apply f| m/apply|stack-merge pats))
 
 
 (comment
@@ -275,75 +372,78 @@
   (-> (s| (n 1) (n inc) (n 2)) evts))
 
 
-(defn m| [f & cycles]
-  (apply f| (m/apply|maths|or|stack-merge f) cycles))
+(defn m| [f & pats]
+  (apply f| (m/apply|maths|or|stack-merge f) pats))
 
 
 (comment
-  (-> (m| + (n 1) (n 2)) evts)
-  (-> (m| + (n #(rand-int 10)) (n 2)) evts)
-  (-> (m| + (n #(rand-int 10)) (n #(inc (/ % 2)))) evts)
-  (-> (m| + (n :a) (n 4)) evts)
-  (-> (m| + (s :a) (s :b)) evts)
-  (-> (m| + (n :a) (s :b)) evts)
+  (-> (m| + (n 1) (n 2)) spin*)
+  (-> (m| + (n v/rand1) (n 2)) spin*)
+  (-> (m| + (n (v/randn 10)) (n #(inc (/ % 2)))) spin)
+  (-> (m| + (nt :a) (n 4)) spin*)
+  (-> (m| + (s :a) (s :b)) spin*)
+  (-> (m| + (nt :a) (s :b)) spin*)
   ,)
 
 
-(defn m> [f & cycles]
-  (apply f> (m/apply|maths|or|stack-merge f) cycles))
+(defn m> [f & pats]
+  (apply f> (m/apply|maths|or|stack-merge f) pats))
 
 
-(defn <m [f & cycles]
-  (apply <f (m/apply|maths|or|stack-merge f) cycles))
+(defn <m [f & pats]
+  (apply <f (m/apply|maths|or|stack-merge f) pats))
 
 
-(defn +| [& cycles]
-  (apply m| + cycles))
+(defn +| [& pats]
+  (apply m| + pats))
 
 
 (comment
-  (evts (s| [2 4 6]
-            [10 inc 8]
-            [:a :b :c]))
-  (evts (s| (n 2 4 6)
-            (n 10 9 8)
-            (n :a :b :c)))
+  (spin* (s| [2 4 6]
+             [10 inc 8]
+             [:a :b :c]))
+  (spin* (s| (n 2 4 6)
+             (n 10 9 8)
+             (nt :a :b :c)))
 
-  (+| [1 2 3] [4 5 6])
+  (spin*
+   (+| [1 2 3] [4 5 6]))
 
-  (evts (s| (+| [1 2 3] [4 5 6])
-            [:a :b :c]
-            [:d :e :f]))
+  (spin* (s| (+| [1 2 3] [4 5 6])
+             [:a :b :c]
+             [:d :e :f]))
 
 
-  (evts (s| [:a :b :c]
-            [:d :e :f]
-            (+| [1 2 3] [4 5 6])))
+  (spin* (s| [:a :b :c]
+             [:d :e :f]
+             (+| [1 2 3] [4 5 6])))
 
-  (evts (f| m/apply|stack-merge
+  (spin* (f| m/apply|stack-merge
             [:a :a :a]
             (f| (fn [a b] (fn [_ ctx] (+ a b))) [1 3 5] [2 4 6])
             ))
 
-  (evts
+  (spin*
    (+| (nt :c :d :e) (nt :c :d :e)))
 
-  (evts (s| (+| [1 2 3] [1 2 3])
-            (m| - [10 10 10] (range 3))
-            [:a :b :c])))
+  (spin* (s| (+| [1 2 3] [1 2 3])
+             (m| - [10 10 10] (range 3))
+             [:a :b :c])))
 
 
-(defn +> [& cycles]
-  (apply m> + cycles))
+(defn +> [& pats]
+  (apply m> + pats))
 
 
-(defn <+ [& cycles]
-  (apply <m + cycles))
+(defn <+ [& pats]
+  (apply <m + pats))
 
 
-(defn jux [tx cyc]
-  (s| (|> cyc (pan 0))
-      (|> (tx cyc) (pan 1))))
+
+(defn jux [tx pat]
+  (stack (|> pat (pan 0))
+         (|> (tx pat) (pan 1))))
+
 
 
 (comment
@@ -352,83 +452,3 @@
 
 
 ;; fn-vals
-
-
-(defn trig-fn
-  [trig-fn pos period ampl]
-  (-> pos             ;; What part of the cycl are we on
-      (* 2 Math/PI)   ;; Maths
-      (/ period)      ;; How many cycles to stretch over
-      trig-fn         ;; Trig
-      (+ 1)           ;; -1 to 1 => 0 to 2
-      (* ampl)        ;; Amplitude
-      (/ 2)))         ;; 0 to 2 => 0 to 1
-
-
-
-(defn amp
-  ([max] (amp 0 max))
-  ([min max]
-   (fn [v]
-     (let [mult (-> max (- min))]
-       (+ min (* mult (or v 0)))))))
-
-
-(defn sin [ampl {:keys [event]}]
-  (trig-fn Math/sin (:start event) (:period event) (or ampl 1)))
-
-
-(defn cos [ampl {:keys [event]}]
-  (trig-fn Math/cos (:start event) (:period event) (or ampl 1)))
-
-
-(defn square [ampl {:keys [event]}]
-  (let [half (/ (:period event) 2)]
-       (if (< (:start event) half)
-         0
-         (or ampl 1))))
-
-(map #(mod % 1) (range 0 3 0.1))
-
-(defn saw
-  [ampl {:keys [event]}]
-  (let [{:keys [start period]} event]
-    (mod (/ start period) (or ampl 1))))
-
-(defn isaw
-  [ampl ctx]
-  (let [ampl (or ampl 1)]
-    (- ampl (saw ampl ctx))))
-
-(comment
-  (map (partial saw 1) (for [s (range 0 2 0.2)] {:event {:start s :period 1}})))
-
-
-(defn itri
-  [ampl {:keys [event]}]
-  (let [{:keys [start period]} event
-        v (abs (- 1 (mod (* (/ 2 period) start) 2)))]
-    (* (or ampl 1) v)))
-
-(comment
-  (map (partial itri 1) (for [s (range 0 2 0.1)] {:event {:start s :period 1}})))
-
-(defn tri
-  [ampl ctx]
-  (let [ampl (or ampl 1)]
-    (- ampl (itri ampl ctx))))
-
-
-(comment
-  (map (partial tri 2) (for [s (range 0 2 0.1)] {:event {:start s :period 2}})))
-
-
-
-(defn rand
-  ([ampl] (clojure.core/rand (or ampl 1))))
-
-
-(defn irand
-  [ampl]
-  #(rand-int ampl))
-

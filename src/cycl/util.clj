@@ -71,19 +71,23 @@
 
 
 (defn fn0? [f?]
-  (zero? (arity f?)))
+  (and (fn? f?)
+       (zero? (arity f?))))
 
 
 (defn fn1? [f?]
-  (= 1 (arity f?)))
+  (and (fn? f?)
+       (= 1 (arity f?))))
 
 
 (defn fn2? [f?]
-  (= 2 (arity f?)))
+  (and (fn? f?)
+       (= 2 (arity f?))))
 
 
 (defn fnv? [f?]
-  (= :variadic (arity f?)))
+  (and (fn? f?)
+       (= :variadic (arity f?))))
 
 
 (defn divisable? [n divisor]
@@ -128,12 +132,13 @@
   NOTE: List grows combinatorily."
   [m]
   (let [ ;; First, recursively process any nested maps
-        processed-m (into {}
-                          (map (fn [[k v]]
-                                 (if (map? v)
-                                   [k (reduplicate v)]
-                                   [k v]))
-                               m))
+        processed-m (reduce-kv
+                     (fn [m k v]
+                       (assoc m k (if (map? v)
+                                    (reduplicate v)
+                                    v)))
+                     {}
+                     m)
         ;; Identify keys with sequential collections (not maps)
         is-seq-coll? #(and (coll? %) (not (map? %)))
         coll-keys (filter #(na-coll? (processed-m %)) (keys processed-m))
@@ -198,14 +203,14 @@
 (defn gimme-vec
   "If given a scalar, return a vector containing that scalar. If given a seq, convert it to a vector."
   [v]
-  (if (sequential? v) (into [] v)
+  (if (sequential? v) (vec v)
       (conj [] v)))
 
 
 (defn vector*
   "Throw stuff at it and always get a flat vector back."
   [& stuff]
-  (->> stuff vec flatten (into [])))
+  (->> stuff vec flatten vec))
 
 (comment
   (vector* :a)
@@ -284,7 +289,9 @@
 
 
 (comment
-  (maybe-> 2 zero? inc))
+  (some-> false not)
+  (maybe-> 2 zero? inc)
+  (maybe-> 2 even? inc))
 
 
 (defn mixed [n]

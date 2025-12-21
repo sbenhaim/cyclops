@@ -2,26 +2,28 @@
   {:clj-kondo/ignore true}
   (:require
    [cycl.pattern :as p]
-   [cycl.events :as e]
+   [cycl.event :as e]
+   [cycl.val :as v]
    [cycl.merge :as m]
    [cycl.util :refer [toggle!] :as u]
-   [cycl.core :as c :refer [start! shutdown! o once sh! pause! now!]]
+   [cycl.ing :as c :refer [start! shutdown! o once sh! pause! now!]]
    [cycl.ops :refer :all]
    [clojure.pprint :refer [print-table]]
    [overtone.at-at :refer [now]]
    [cycl.music :as mu]))
 
 
+(connect-dirt)
 (start!)
 (shutdown!)
 
 (c/set-cps! 1/2)
 
 ;; d1 $ sound "bd*8" # pan sine
-(now! (s (x 8 :bd)) (pan sin))
+(now! (s (x 8 :bd)) (pan v/sin1))
 
 ;; d1 $ sound "bd*8" # pan cosine # speed (sine + 0.5)
-(now! (s (x 8 :bd)) (pan cos) (speed (+| sin 0.5)))
+(now! (s (x 8 :bd)) (pan (v/cos)) (speed (+| (v/sin) 0.5)))
 
 ;; d1 $ sound "bd*8" # pan (cat [square, sine])
 (now! (s (x 8 :bd)) (pan square sin))
@@ -40,5 +42,3 @@
 
 ;; d1 $ sound "bd*8" # pan rand
 (now! (s (x 8 :bd)) (pan rand))
-
-

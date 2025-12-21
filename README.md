@@ -14,28 +14,11 @@ _______________________/\/\/\/\________________/\/\______________/\/\___________
 
 # What?
 
-[Uzu](https://uzu.lurk.org/) (as in [TidalCycles](https://tidalcycles.org/)/[Strudel](https://strudel.cc/)) in Clojure and Overtone.
+Live-coding with looping patterns.
 
-## What's Uzu
 
-An opinionated paradigm for live-coding music featuring minimal syntax and cycle-based (loop-based) approach.
+Heavily inspired by [TidalCycles](https://tidalcycles.org/) and its Javascript port [Strudel](https://strudel.cc/) in the family of [Uzu](https://uzu.lurk.org/) langs.
 
-"Opinionated" because instead of offering low-level scheduling constructs, Uzu langs assume you're building your song by layering loops and optimizes for this with terse syntax for creating, merging, and manipulating loops. IMO, this makes Uzu langs less flexible but more musical (in the way that a looper pedal is more musical than a DAW).
-
-## Why build another in Clojure?
-
-Good question! The OG Uzu lang is Tidal(Cycles), written in Haskell (naturally), and it's great.
-
-For something you can play in a browser, check out Strudel, which is also great!
-
-You should definitely use both of those, and they are currently much more mature than Cyclops.
-
-But neither solution had enough parens for my tastes. Also
-
-- The Clojure REPL was made for live coding.
-- In Clojure, we can get pretty close to mini syntax terseness, but using native language constructs.
-- Which allows convenient use of Clojure's vast collection-oriented functionality in pattern composition and manipulation.
-- And 
 
 ## What does it look like?
 
@@ -46,7 +29,7 @@ d1 $ sound "bd*8" # pan cosine # speed (sine + 0.5)
 
 ``` javascript
 // Strudel
-sound("bd*8").pan(cosine).speed(sine.add(0.5))
+$: sound("bd*8").pan(cosine).speed(sine.add(0.5))
 ```
 
 ``` clojure
@@ -56,7 +39,14 @@ sound("bd*8").pan(cosine).speed(sine.add(0.5))
 
 ## Differences
 
-1. No mini notation. (I mean, you could add it, but intentionally trying to get on without it.)
+1. S-expressions instead of mini notation means you can more easily mix code with terse pattern expression.
+
+``` clojure
+(cycl 0 1 2 3 4 5 6 7 8 9)
+(cycl (range 10))
+(cycl (->> (range 10) (filter odd?) #(* % 2)))
+```
+
 2. No signals
    - In Strudel and Tidal, `sine` and `cosine`, and `rand` are "signals", which behave differently from events/haps/params/etc. In Cyclops they are function values (interchangeable with other values like `60` and `:c` and `:bd`). See #3.
 3. Fn with values
@@ -78,8 +68,8 @@ sound("bd*8").pan(cosine).speed(sine.add(0.5))
 ## What's implemented?
 
 - Integration with Superdirt on SuperCollider
-- Many of Tidal's functions
-- Many of Strudel's functions
+- Some of Tidal's functions
+- Some of Strudel's functions
 
 ## What's planned?
 
@@ -145,7 +135,7 @@ Take away the magic, and the original could progressively be expanded into equiv
          (pan (+| 2 sin 0.5))))
 
 
-;; No variadic magic or value "lifting"
+;; No variadic magic
 (o 1 (+| [(s [:piano]) 
           (nt (+| [[:c5] (chord :cm)])) 
           (pan (+| [[2] [sin] [0.5]]))]))
@@ -163,13 +153,6 @@ Take away the magic, and the original could progressively be expanded into equiv
                   (->param :pan float (merge-cycles* (m/apply|maths|or|stack-merge +) [(->FitOp [2]) (->FitOp [sin]) (->FitOp [0.5])]))]))
 ```
 
-All of these are equivalent (and valid, assuming you import the fns from the appropriate namespaces).
-
-This would be pretty appalling in an API, but is hopefuly justifiable in this context.
-
-OTOH, Cyclops strives to be hackable, which means the code base needs to be scrutable. So abominations like `lift`, `lift*`, `smart-splat`, `gimme-vec`, et. al., are consigned to the `cycl.ops` namespace, intended for use during live-coding, not necessarily during development.
-
-Lower-level namespaces should be less terse/magical/surprising.
 
 # Terminology
 
@@ -292,45 +275,16 @@ A single musical action having a discrete start and duration, typically converte
 
 Represented in shorthand as a keyword (`:bd`), string (`"cm7"`), number (`7`) or `fn` for dynamic, schedule-time events.
 
-## Event Shorthand
-
-Abbreviated representation of events as keywords, strings, numbers or fns. Converted to event maps during processing.
-
-## Event Maps
-
-Expanded event, which can be created explicitly or expanded from shorthand.
-
-## Segment
-
-A subdivision of a cycle into which events are scheduled.
-
-## Segment Weight
-
-An attribute of an event indicating how many segments it occupies. Default 1.
 
 ## Pattern
 
 A collection of simultaneoulsy played loops.
 
-## Mini Notation (minis)
-
-A recreation of the Tidal/Strudal mini notation.
-
 ## Ops
 
 Operations applied to one or more events affecting timing or other attributes.
 
-### Op Types
+# License
+Copyright 2025 Selah Ben-Haim.
 
-- Op: fit, cyc
-- Op*: cyc* , rep*
-- OpTx?: range
-- Ctrl: n, s
-- Cycl: [evt...]
-- CyclTx: cycl -> cycl
-- Merge: [cycl...] -> cycl
-- CtxFn: i ctx -> value
-
-## Pattern Notation
-
-Definition of patterns via pattern functions (representing ops), and events in shorthand notation or event maps.
+This software is provided open source through the AGPL 3.0 license, which means you are free to use it, copy it, and change it as long as your version is also open source and AGPL See [LICENSE](LICENSE).

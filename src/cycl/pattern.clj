@@ -1,9 +1,9 @@
 (ns cycl.pattern
   (:require [cycl.event :as e]
+            [cycl.val :as v]
             [cycl.util :as u]
             [cycl.cycl :as c]
-            [cycl.merge :as m]
-            [cycl.music :as music]))
+            [cycl.merge :as m]))
 
 
 (defprotocol Pattern
@@ -28,15 +28,11 @@
     (gen pat 0 p)))
 
 
-(defn spin*
-  [pat]
-  (-> pat spin (c/realize-cycl {})))
-
-
 (defn lcp
   [pats]
-  (if (= 1 (count pats))
-    (period (first pats))
+  (case (count pats)
+    0 1
+    1 (period (first pats))
     (apply u/lcm (map period pats))))
 
 
@@ -87,17 +83,19 @@
 (defrecord Fit [pats]
   Pattern
   (gen [this start length]
-    (let [i-start (iter-start (long start) (period this))]
-      (->
-       (arrange
-        (fn [evt offset weight n]
-          (let [[_ frac] (u/mixed (e/start evt))
-                scale    (/ n)]
-            (-> evt
-                (assoc :start (+ i-start (* offset scale) (* frac scale weight)))
-                (update :length #(* % scale weight)))))
-        pats)
-       (c/slice-starts start length))))
+    (if (seq pats)
+      (let [i-start (iter-start (long start) (period this))]
+        (->
+         (arrange
+          (fn [evt offset weight n]
+            (let [[_ frac] (u/mixed (e/start evt))
+                  scale    (/ n)]
+              (-> evt
+                  (assoc :start (+ i-start (* offset scale) (* frac scale weight)))
+                  (update :length #(* % scale weight)))))
+          pats)
+         (c/slice-starts start length)))
+      []))
   (period [_] (lcp pats))
   (weight [_] 1))
 
@@ -117,6 +115,7 @@
     (sequential? x)        (if (c/cycl? x)
                              (->Lit x 1 1)
                              (->Fit (map ->pat x)))
+    (nil? x)               (->Fit [])
     :else                  (->Pure x)))
 
 
@@ -124,19 +123,20 @@
 (defrecord Cyc [pats]
   Pattern
   (gen [this start length]
-    (let [i-start (iter-start (long start) (period this))]
-      (->
-       (arrange
-        (fn [evt offset weight n]
-          (let [[_ frac] (u/mixed (e/start evt))]
-            (-> evt
-                (assoc :start (+ i-start offset (* frac weight)))
-                (update :length #(* % weight)))))
-        pats)
-       (c/slice-starts start length))))
-  (period [_] (let [ps    (map period pats)
-                    top-p (weigh pats)]
-                (* top-p (apply u/lcm ps))))
+    (if (seq pats)
+      (let [i-start (iter-start (long start) (period this))]
+        (->
+         (arrange
+          (fn [evt offset weight n]
+            (let [[_ frac] (u/mixed (e/start evt))]
+              (-> evt
+                  (assoc :start (+ i-start offset (* frac weight)))
+                  (update :length #(* % weight)))))
+          pats)
+         (c/slice-starts start length)))
+      []))
+  (period [_] (let [top-p (weigh pats)]
+                (* top-p (lcp pats))))
   (weight [_] 1))
 
 
@@ -244,14 +244,34 @@
   (period [_] 1))
 
 
-(defrecord Reverse [pats])
-(defrecord Rreverse [pats])
+(defrecord Reverse [pat]
+  Pattern
+  (gen [this start length]
+    (let [p    (period this)
+          evts (gen pat start length)]
+      (->> evts
+           (map
+            (fn [evt]
+              (let [evt-start  (e/start evt)
+                    evt-length (e/length evt)
+                    ;; Find which cycle this event belongs to
+                    cycle-num  (long (Math/floor (/ evt-start p)))
+                    cycle-base (* cycle-num p)
+                    ;; Mirror position within the cycle
+                    rel-start  (- evt-start cycle-base)
+                    rel-end    (+ rel-start evt-length)
+                    new-rel    (- p rel-end)
+                    new-start  (+ cycle-base new-rel)]
+                (assoc evt :start new-start))))
+           (c/sort-cycl))))
+  (period [_] (period pat))
+  (weight [_] (weight pat)))
 
 
 (defrecord Control [param value-tx pat]
   Pattern
   (gen [_ start length]
-    (map (fn [e] (e/reassoc-param e :init param value-tx))
+    (map (fn [e] (e/reassoc-param e :init param #(v/->Realize+Apply value-tx %)))
          (gen pat start length)))
   (period [_] (period pat))
   (weight [_] (weight pat)))
@@ -321,8 +341,10 @@
 (defrecord EventMerge [merge-fn pats]
   Pattern
   (gen [_ start length]
-    (let [cycls (map #(gen % start length) pats)]
-      (reduce (fn [merged cycl] (m/merge-cycles merge-fn merged cycl)) cycls)))
+    (if (seq pats) 
+      (let [cycls (map #(gen % start length) pats)]
+        (reduce (fn [merged cycl] (m/merge-cycles merge-fn merged cycl)) cycls))
+      []))
   (period [_] (lcp pats))
   (weight [_] (apply max (map weight pats))))
 
@@ -330,30 +352,84 @@
 (defrecord Stack [pats]
   Pattern
   (gen [_ start length]
-    (mapcat #(gen % start length) pats))
+    (->> pats
+         (mapcat #(gen % start length))
+         (c/sort-cycl)))
   (period [_] (lcp pats))
   (weight [_] 1))
 
 
-#_(defrecord ChopOp [n pat]
+(defrecord Chop [n pat]
   Pattern
   (gen [_ start length]
-    (let [evts      (gen pat start length)
-          cnt       (count evts)
-          op        (->Times (repeat n cnt) evts)
-          pre-chops (operate op ctx)
-          ;; ops       (map #(->TimesOp n [%]) evts)
-          ;; pre-chops (mapcat #(operate % ctx) ops)
-          ;; chops     (map #(-> %
-          ;;                     (e/assoc-param :begin (:start %))
-          ;;                     (e/assoc-param :end (e/end %)))
-          ;;                pre-chops)
-          ]
-      
-      pre-chops
-      ;; evts
-      ;; chops
-      ))
+    (let [evts (gen pat start length)]
+      (mapcat
+       (fn [evt]
+         (let [evt-start  (e/start evt)
+               evt-length (e/length evt)
+               ;; Get existing begin/end or default to 0-1
+               begin      (or (e/get-param evt :begin) 0)
+               end        (or (e/get-param evt :end) 1)
+               rng        (- end begin)]
+           ;; Create n slices, each with proportional begin/end
+           (for [i (range n)]
+             (let [slice-begin  (+ begin (* rng (/ i n)))
+                   slice-end    (+ begin (* rng (/ (inc i) n)))
+                   ;; Each slice takes 1/n of the original event's time
+                   slice-start  (+ evt-start (* evt-length (/ i n)))
+                   slice-length (/ evt-length n)]
+               (-> evt
+                   (assoc :start slice-start)
+                   (assoc :length slice-length)
+                   (e/assoc-param :begin slice-begin)
+                   (e/assoc-param :end slice-end))))))
+       evts)))
   (period [_] (period pat))
-  (weight [_] 1))
+  (weight [_] (weight pat)))
+
+
+(defrecord Striate [n pat]
+  Pattern
+  (gen [_ start length]
+    (let [inner-p (period pat)
+          evts    (gen pat start length)]
+      (map
+       (fn [evt]
+         (let [evt-start   (e/start evt)
+               cycle-num   (long (Math/floor (/ evt-start inner-p)))
+               slice-idx   (mod cycle-num n)
+               begin       (or (e/get-param evt :begin) 0)
+               end         (or (e/get-param evt :end) 1)
+               rng         (- end begin)
+               slice-begin (+ begin (* rng (/ slice-idx n)))
+               slice-end   (+ begin (* rng (/ (inc slice-idx) n)))]
+           (-> evt
+               (e/assoc-param :begin slice-begin)
+               (e/assoc-param :end slice-end))))
+       evts)))
+  (period [_] (* n (period pat)))
+  (weight [_] (weight pat)))
+
+
+(defrecord StriatBy [n len pat]
+  Pattern
+  (gen [_ start length]
+    (let [inner-p (period pat)
+          evts    (gen pat start length)]
+      (map
+       (fn [evt]
+         (let [evt-start   (e/start evt)
+               cycle-num   (long (Math/floor (/ evt-start inner-p)))
+               slice-idx   (mod cycle-num n)
+               begin       (or (e/get-param evt :begin) 0)
+               end         (or (e/get-param evt :end) 1)
+               rng         (- end begin)
+               slice-begin (+ begin (* rng (/ slice-idx n)))
+               slice-end   (min (+ slice-begin (* rng len)) end)]
+           (-> evt
+               (e/assoc-param :begin slice-begin)
+               (e/assoc-param :end slice-end))))
+       evts)))
+  (period [_] (* n (period pat)))
+  (weight [_] (weight pat)))
 

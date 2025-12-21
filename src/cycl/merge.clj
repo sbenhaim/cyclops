@@ -1,26 +1,35 @@
 (ns cycl.merge
   (:require [cycl.event :as e]
             [cycl.util :as u]
+            [cycl.val :as v]
             [cycl.cycl :as c]))
 
 
 (defn left-merge
-  "First value wins (i.e., a, usually)"
+  "First value wins"
   [a _b] a)
+
+
+(defrecord FnMerge [mfn a b]
+  v/DoYouRealize?
+  (realize [_ ctx]
+    (v/realize
+     (mfn (v/realize a ctx)
+          (v/realize b ctx))
+     ctx)))
 
 
 (defn fn-merge
   "Workhorse"
   [f]
   (fn [a b]
-    (fn [_ ctx]
-      (f (e/realize a ctx)
-         (e/realize b ctx)))))
+    (->FnMerge f a b)))
 
 
 (def stack-merge
   "Combine as vector, i.e. played simultaneously"
   (fn-merge (fn [a b] (u/set* a b))))
+
 
 (def or-merge
   "First truthy value wins."
@@ -30,28 +39,16 @@
 (defn apply-merge
   "If b is fn, apply to a"
   [a b]
-  (fn [_ ctx]
-    (case (u/arity b)
-      1 (b (e/realize a ctx))
-      :variadic (b (e/realize a ctx))
-      2 (b (e/realize a ctx) ctx))))
+  (v/->Realize+Apply b a))
 
 
-;; TODO: The result of some of these merges is a fn that should be realized and provided to f
-;; But if that fn takes 1 2 or v args, we apply instead.
-;; And it needs to accept args to accept ctx
-;; What is the way to signal that we don't want to apply, but fall
-;; back to the fn
 (defn apply|fn-merge
   "If b is fn, apply to a. Otherwise apply fn `f` to realized values of a and b"
   [f]
-  (fn a|fm1 [a b]
-    (fn a|fm2 [_ ctx]
-      (cond
-        (u/fn1? b) (b (e/realize a ctx))
-        (u/fnv? b) (b (e/realize a ctx))
-        (u/fn2? b) (b (e/realize a ctx) ctx) ;; <- Seems to work
-        :else (f (e/realize a ctx) (e/realize b ctx))))))
+  (fn [a b]
+    (if (fn? b)
+      (->ApplyMerge a b)
+      (->FnMerge f a b))))
 
 
 (def apply|left-merge

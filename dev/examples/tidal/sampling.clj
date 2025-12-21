@@ -1,7 +1,7 @@
 (ns examples.tidal.sampling
   (:require
    [cycl.dirt]
-   [cycl.core :as c :refer [start! shutdown! o once sh! pause! now!]]
+   [cycl.ing :as c :refer [start! shutdown! o once sh! pause! now!]]
    [cycl.ops :refer :all]))
 
 ;; d1 $ chop 16 $ sound "arpy ~ feel*2 newnotes"
@@ -13,6 +13,7 @@
 
 ;; d1 $ chop "<16 128 32>" $ sound "arpy ~ feel*2 newnotes"
 
+(now! (chop (cyc 16 128 32) (s :arpy :- (x 2 :feel) :newnotes)))
 
 ;; d1 $ slow 2 $ rev $ chop 16 $ sound "breaks125"
 

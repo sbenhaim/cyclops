@@ -1,7 +1,10 @@
 (ns cycl.ing
   (:require
    [overtone.at-at :as at]
-   [cycl.events :as e]
+   [cycl.event :as e]
+   [cycl.pattern :as p]
+   [cycl.val :as v]
+   [cycl.cycl :as c]
    [cycl.util :refer [reduplicate]]
    [cycl.ops :as ops]
    [overtone.studio.transport :refer [*clock*]]
@@ -108,16 +111,15 @@
     modo))
 
 
-(defn get-slice [cycl cycle-num]
-  (when (seq cycl)
-    (let [period (e/period cycl)
-          from   (mod cycle-num period)
-          slc    (e/slice cycl from tick-dur :starts-during)
-          slc    (map #(assoc % :trigger-after (- (:start %) from)) slc)]
-      (when (seq slc)
-        (when @verbose
-          (println from 1 (mapv #(select-keys % [:start :s :n]) slc)))
-        slc))))
+(defn get-slice [pat cycle-num]
+  (let [period (p/period pat)
+        from   (mod cycle-num period)
+        slc    (p/gen pat from tick-dur)
+        slc    (map #(assoc % :trigger-after (- (:start %) from)) slc)]
+    (when (seq slc)
+      (when @verbose
+        (println from 1 (mapv #(select-keys % [:start :s :n]) slc)))
+      slc)))
 
 (defn apply-timing
   ([slc]
@@ -133,12 +135,12 @@
 (defn tick
   ([] (tick (*clock*)))
   ([cycle-num]
-   (doseq [[layer cycl] @layers]
+   (doseq [[layer pat] @layers]
      #_future
-     (let [slc (get-slice cycl cycle-num)
+     (let [slc (get-slice pat cycle-num)
            slc (apply-timing slc cycle-num)
            ctx {:cycle-num cycle-num :layer layer}
-           slc (e/realize slc ctx)]
+           slc (c/realize-cycl slc ctx)]
        (when (and (not @sh) (seq slc))
          (dispatch* slc ctx))))
    (let [next-cycle (+ cycle-num tick-dur)
@@ -250,21 +252,23 @@
 
 
 (defn hoist-merge
-  [cyc]
-  (if (> (count cyc) 1)
-    (apply ops/+| cyc)
-    (first cyc)))
+  [pats]
+  (if (> (count pats) 1)
+    (apply ops/+| pats)
+    (first pats)))
 
 
 (defn o
-  [n & cyc]
-  (swap! layers assoc n (hoist-merge cyc))
+  [n & pats]
+  (if (seq pats)
+    (swap! layers assoc n (hoist-merge pats))
+    (swap! layers dissoc n))
   (speak!))
 
 
 (defn now! [& cyc]
-  (-> cyc hoist-merge ops/evts apply-timing (dispatch* {})))
+  (-> cyc hoist-merge ops/spin* apply-timing (dispatch* {})))
 
 
 (defn once [& cyc]
-  (-> cyc hoist-merge ops/evts (apply-timing (*clock*)) (dispatch* {})))
+  (-> cyc hoist-merge ops/spin* (apply-timing (*clock*)) (dispatch* {})))
