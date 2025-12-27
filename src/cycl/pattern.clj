@@ -100,6 +100,10 @@
   (weight [_] 1))
 
 
+(comment
+  (gen (->Fit [(->pat :a)]) 0 3/2))
+
+
 (defrecord Speed [x pat]
   Pattern
   (gen [_ start length]
@@ -337,16 +341,27 @@
                   1))))
 
 
-
-(defrecord EventMerge [merge-fn pats]
+(defrecord EventMergeLeft [merge-fn pats]
   Pattern
   (gen [_ start length]
     (if (seq pats) 
       (let [cycls (map #(gen % start length) pats)]
-        (reduce (fn [merged cycl] (m/merge-cycles merge-fn merged cycl)) cycls))
+        (reduce (fn [merged cycl] (m/merge-cycles-left merge-fn merged cycl)) cycls))
       []))
   (period [_] (lcp pats))
   (weight [_] (apply max (map weight pats))))
+
+
+(defrecord EventMergeSplit [merge-fn pats]
+  Pattern
+  (gen [_ start length]
+    (if (seq pats) 
+      (let [cycls (map #(gen % start length) pats)]
+        (reduce (fn [merged cycl] (m/merge-cycles-split merge-fn merged cycl)) cycls))
+      []))
+  (period [_] (lcp pats))
+  (weight [_] (apply max (map weight pats))))
+
 
 
 (defrecord Stack [pats]

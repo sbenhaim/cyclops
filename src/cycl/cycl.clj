@@ -29,10 +29,10 @@
 
 (defn slice-active
   ;; TODO: Whole/part
-  [cycl from length]
+  [cycl from end]
   (->> cycl
        (drop-while #(<= (e/end %) from))
-       (take-while #(< (e/start %) (+ from length)))))
+       (take-while #(< (e/start %) end))))
 
 
 (defn offset [cycl amount]

@@ -47,7 +47,7 @@
   [f]
   (fn [a b]
     (if (fn? b)
-      (->ApplyMerge a b)
+      (v/->Realize+Apply b a)
       (->FnMerge f a b))))
 
 
@@ -86,39 +86,77 @@
 
 
 
-(defn merge-events-left
-  "Logic for structure-from-left merge.
-  Do not pass directly to merge fns. Used for internal logic."
-  [with-fn]
-  (fn [a [b & _]]
-    [(update a :params
-             #(merge-with
-               (fn [b a] (with-fn a b))
-               (:params b) %))]))
-
-
-(defn merge-events-split
-    "Logic for structure-from-both merge.
-  Do not pass directly to merge fns. Used for internal logic."
-  [with-fn]
-  (fn [a bs]
-    (map
-     (fn [b]
-       (let [start      (max (:start a) (:start b))
-             full-start (max (e/start a) (e/start b))
-             end        (min (e/end a) (e/end b))
-             [merged]   ((merge-events-left with-fn) a [b])]
-         (assoc merged :start start :length (- end full-start))))
-     bs)))
-
-
-
-(defn merge-cycles
+(defn merge-cycles-left
   [merge-fn cycl-a cycl-b]
-  (mapcat
-   (fn [a]
-     (let [overlap (c/slice-active cycl-b (e/start a) (e/length a))]
-       (if (seq overlap)
-         (merge-fn a overlap)
-         [a])))
-   cycl-a))
+  (map (fn [a]
+         (let [a-start (e/start a)
+               [b]     (filter #(and
+                                 (<= (e/start %) a-start)
+                                 (> (e/end %) a-start))
+                               cycl-b)]
+           (if b
+             (update a :params
+                     #(merge-with merge-fn (:params b) %))
+             a)))
+       cycl-a))
+
+
+(comment
+  (let [a [{:start 0 :length 1 :params {:init :a}}]
+        b [{:start 0 :length 1/2 :params {:init :b1}}
+           {:start 1/2 :length 1/2 :params {:init :b2}}]]
+    (merge-cycles-left u/set* a b))
+  (let [a [{:start 0 :length 1/2 :params {:init :a1}}
+           {:start 1/2 :length 1/2 :params {:init :a2}}]
+        b [{:start 1/2 :length 1/2 :params {:init :b}}]]
+    (merge-cycles-left u/set* a b))
+  (let [a [{:start 0 :length 1/3 :params {:init :a1}}
+           {:start 1/3 :length 2/3 :params {:init :a2}}]
+        b [{:start 0 :length 1/2 :params {:init :b1}}
+           {:start 1/2 :length 1/2 :params {:init :b2}}]]
+    (merge-cycles-left u/set* a b)))
+
+
+(defn slices
+  [a b]
+  (let [ab     (concat a b)
+        starts (map e/start ab)
+        ends   (map e/end ab)]
+    (->> (concat starts ends)
+         sort
+         distinct
+         (partition 2 1))))
+
+
+(defn merge-cycles-split
+  [merge-fn cycl-a cycl-b]
+  (let [slices (slices cycl-a cycl-b)]
+    (map
+     (fn [[start end]]
+       (let [[a]    (c/slice-active cycl-a start end)
+             [b]    (c/slice-active cycl-b start end)
+             params (cond
+                      (nil? b) (:params a)
+                      (nil? a) (:params b)
+                      :else    (merge-with merge-fn (:params a) (:params b)))]
+         (e/->event params start (- end start))))
+     slices)))
+
+
+(comment
+  (let [a [{:start 0 :length 1/2 :params {:init :a}}]
+        b [{:start 1/4 :length 1/2 :params {:init :b1}}
+           {:start 1/2 :length 1/2 :params {:init :b2}}]]
+    (merge-cycles-split u/set* a b))
+  (let [a [{:start 0 :length 1/2 :params {:init :a}}]
+        b [{:start 1/2 :length 1/2 :params {:init :b}}]]
+    (merge-cycles-split u/set* a b))
+  (let [a [{:start 1/3 :length 1/3 :params {:init :a}}]
+        b [{:start 0 :length 1/2 :params {:init :b1}}
+           {:start 1/2 :length 1/2 :params {:init :b2}}]]
+    (merge-cycles-split u/set* a b))
+  (let [a [{:start 0 :length 1/3 :params {:init :a1}}
+           {:start 1/3 :length 1/3 :params {:init :a2}}
+           {:start 2/3 :length 1/3 :params {:init :a3}}]
+        b [{:start 0 :length 1/2 :params {:init :b}}]]
+    (merge-cycles-split u/set* a b)))

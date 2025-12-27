@@ -264,7 +264,7 @@
   )
 
 (defn f| [f & pats]
-  (p/->EventMerge (m/merge-events-split f) (map ->pat pats)))
+  (p/->EventMergeSplit f (map ->pat pats)))
 
 
 
@@ -286,12 +286,12 @@
 
   (-> (f| (m/fn-merge m/stack-merge) [1] [2]) spin)
 
-  (-> (f| m/or-merge [1 2 nil] [:a :b :c]) spin)
-  (-> (f| m/or-merge (fit 1 2 nil) [:a :b :c]) spin)
+  (-> (f| m/or-merge [1 2 nil] [:a :b :c]) spin*)
+  (-> (f| m/or-merge (fit 1 2 nil) [:a :b :c]) spin*)
 
   (-> (f| m/apply-merge [60 61 62] [inc #(* 2 %)]) spin*)
   (-> (f| m/apply-merge [60 61 62] [#(* 2 %)]) spin*)
-  (-> (f| m/apply-merge [60 61 62] [inc inc #(* 2 %)]) spin)
+  (-> (f| m/apply-merge [60 61 62] [inc inc #(* 2 %)]) spin*)
   (-> (f| m/apply-merge [60 61 62] [inc #(* 2 %)]) spin)
 
 
@@ -336,11 +336,11 @@
   (fit 0) [(+ 1) (+ 3) (+ 10)])
 
 (defn f> [f & pats]
-  (p/->EventMerge (m/merge-events-left f) (map ->pat pats)))
+  (p/->EventMergeLeft f (map ->pat pats)))
 
 
 (defn <f [f & pats]
-  (p/->EventMerge (m/merge-events-left f) (map ->pat (reverse pats))))
+  (p/->EventMergeLeft f (map ->pat (reverse pats))))
 
 
 (defn <| [& pats]
@@ -452,3 +452,7 @@
 
 
 ;; fn-vals
+
+(comment
+  (spin
+   (<| (fit :a) (fit :b :c))))
