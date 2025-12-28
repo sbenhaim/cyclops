@@ -131,3 +131,15 @@
 (defn map-params
   [param f evts]
   (map #(update-in % [:param param] f) evts))
+
+
+(defn overlaps?
+  [a b]
+  (or (and (<= (start b) (start a)) (< (start a) (end b)))
+      (and (<= (start a) (start b)) (< (start b) (end a)))))
+
+
+(comment
+  (overlaps?
+   (->event nil 1/4 1)
+   (->event nil 1/2 1/4)))

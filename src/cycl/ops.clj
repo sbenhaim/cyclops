@@ -220,8 +220,6 @@
   (->ctrl :legato float pat))
 
 
-;; Start here
-
 
 (comment
   ;; vfns
@@ -273,10 +271,10 @@
   (spin* (f| +))
   (->pat nil)
 
-  (-> (f| m/left-merge (s :a) (s :b)) spin)
-  (-> (f| m/left-merge [:a] [:b]) spin)
+  (-> (f| m/left-merge (s :a) (s :b)) spin*)
+  (-> (f| m/left-merge [:a] [:b]) spin*)
   (-> (f| m/left-merge :a :b) spin)
-  (-> (f| m/left-merge (s :a) (n 1)) spin)
+  (-> (f| m/left-merge (s :a) (n 1)) spin*)
   (-> (f| m/left-merge [:a] [:b]) spin)
 
   (-> (f| (m/fn-merge vector) (s :a) (n 1)) spin)
@@ -292,7 +290,7 @@
   (-> (f| m/apply-merge [60 61 62] [inc #(* 2 %)]) spin*)
   (-> (f| m/apply-merge [60 61 62] [#(* 2 %)]) spin*)
   (-> (f| m/apply-merge [60 61 62] [inc inc #(* 2 %)]) spin*)
-  (-> (f| m/apply-merge [60 61 62] [inc #(* 2 %)]) spin)
+  (-> (f| m/apply-merge [60 61 62] [inc #(* 2 %)]) spin*)
 
 
   :dbg
@@ -352,9 +350,9 @@
 
 
 (comment
-  (spin (<| (s :a :b :c) (s :c :d :e)))
-  (spin (|> (s :a :b :c) (s :c :d :e)))
-  (spin (|> (s :a :b :c) (n 1 2 3))))
+  (spin* (<| (s :a :b :c) (s :c :d :e)))
+  (spin* (|> (s :a :b :c) (s :c :d :e)))
+  (spin* (|> (s :a :b :c) (n 1 2 3))))
 
 
 (defn a| [& pats]

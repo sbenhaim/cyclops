@@ -39,11 +39,15 @@
 (defrecord Pure [value]
   Pattern
   (gen [_ start length]
-    (let [start (long (Math/ceil start))]
-      (-> (map #(e/->event value % 1) (iterate inc start))
-          (c/slice-starts start length))))
+    (let [i-start (long (Math/floor start))]
+      (-> (map #(e/->event value % 1) (iterate inc i-start))
+          (c/slice start length))))
   (period [_] 1)
   (weight [_] 1))
+
+
+(comment
+  (gen (->Pure :a) 1/2 2))
 
 
 (defrecord Lit [events p w]
@@ -57,7 +61,7 @@
             (-> evt (update :start #(+ % iter)))))
         (repeat events)
         (iterate #(+ % p) i-start))
-       (c/slice-starts start length))))
+       (c/slice start length))))
   (period [_] p)
   (weight [_] w))
 
@@ -94,23 +98,31 @@
                   (assoc :start (+ i-start (* offset scale) (* frac scale weight)))
                   (update :length #(* % scale weight)))))
           pats)
-         (c/slice-starts start length)))
+         (c/slice start length)))
       []))
   (period [_] (lcp pats))
   (weight [_] 1))
 
 
+
 (comment
-  (gen (->Fit [(->pat :a)]) 0 3/2))
+  (gen (->Fit [(->pat :a)]) 1 3/2))
 
 
 (defrecord Speed [x pat]
   Pattern
   (gen [_ start length]
     (-> (gen pat (* start x) (* length x))
-        (c/scale (/ x))))
+        (c/scale (/ x))
+        (->> (map (fn [e] (e/update-param e :period #(* (or % 1) (/ x))))))))
   (period [_] (/ (period pat) x))
   (weight [_] (weight pat)))
+
+
+(comment
+  (gen
+   (->Speed 1/3 (->Pure :a))
+   1 2))
 
 
 (defn ->pat [x]
@@ -137,7 +149,7 @@
                   (assoc :start (+ i-start offset (* frac weight)))
                   (update :length #(* % weight)))))
           pats)
-         (c/slice-starts start length)))
+         (c/slice start length)))
       []))
   (period [_] (let [top-p (weigh pats)]
                 (* top-p (lcp pats))))
@@ -151,6 +163,10 @@
         (c/scale (/ n))))
   (period [_] (period pat))
   (weight [_] (weight pat)))
+
+
+(comment
+  (gen (->Times 2 (->Pure :a)) 0 1))
 
 
 (defrecord Elongate [x pat]
@@ -217,7 +233,7 @@
           (let [lucky (rand-nth pats)]
             (gen lucky iter-no p)))
         (iterate #(+ % p) i-start))
-       (c/slice-starts start length))))
+       (c/slice start length))))
   (period [_] (period (first pats)))
   (weight [_] (weight (first pats))))
 
@@ -253,21 +269,22 @@
   (gen [this start length]
     (let [p    (period this)
           evts (gen pat start length)]
-      (->> evts
-           (map
-            (fn [evt]
-              (let [evt-start  (e/start evt)
-                    evt-length (e/length evt)
-                    ;; Find which cycle this event belongs to
-                    cycle-num  (long (Math/floor (/ evt-start p)))
-                    cycle-base (* cycle-num p)
-                    ;; Mirror position within the cycle
-                    rel-start  (- evt-start cycle-base)
-                    rel-end    (+ rel-start evt-length)
-                    new-rel    (- p rel-end)
-                    new-start  (+ cycle-base new-rel)]
-                (assoc evt :start new-start))))
-           (c/sort-cycl))))
+      (-> (map
+           (fn [evt]
+             (let [evt-start  (e/start evt)
+                   evt-length (e/length evt)
+                   ;; Find which cycle this event belongs to
+                   cycle-num  (long (Math/floor (/ evt-start p)))
+                   cycle-base (* cycle-num p)
+                   ;; Mirror position within the cycle
+                   rel-start  (- evt-start cycle-base)
+                   rel-end    (+ rel-start evt-length)
+                   new-rel    (- p rel-end)
+                   new-start  (+ cycle-base new-rel)]
+               (assoc evt :start new-start)))
+           evts)
+          (c/sort-cycl)
+          (c/slice start length))))
   (period [_] (period pat))
   (weight [_] (weight pat)))
 
@@ -320,7 +337,7 @@
 
 
 (defrecord OpMerge [op arg-pat val-pat]
-  ;; TODO: This is gross
+  ;; TODO: Could this be simpler?
   Pattern
   (gen [_ start length]
     (let [arg-cycl (gen arg-pat start length)
@@ -329,7 +346,8 @@
       (-> (map
            (fn [arg-evt]
              (let [arg     (e/get-init arg-evt)
-                   overlap (c/slice-starts val-cycl (e/start arg-evt) (e/length arg-evt))]
+                   overlap (c/slice val-cycl (e/start arg-evt) (e/length arg-evt))
+                   overlap (filter :trigger? overlap)]
                (round-trip op arg overlap mp)))
            arg-cycl)
           re-weight)))
@@ -356,8 +374,10 @@
   Pattern
   (gen [_ start length]
     (if (seq pats) 
-      (let [cycls (map #(gen % start length) pats)]
-        (reduce (fn [merged cycl] (m/merge-cycles-split merge-fn merged cycl)) cycls))
+      (->
+       (let [cycls (map #(gen % start length) pats)]
+         (reduce (fn [merged cycl] (m/merge-cycles-split merge-fn merged cycl)) cycls))
+       (c/slice start length))
       []))
   (period [_] (lcp pats))
   (weight [_] (apply max (map weight pats))))

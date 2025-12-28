@@ -133,8 +133,8 @@
   (let [slices (slices cycl-a cycl-b)]
     (map
      (fn [[start end]]
-       (let [[a]    (c/slice-active cycl-a start end)
-             [b]    (c/slice-active cycl-b start end)
+       (let [[a]    (c/slice cycl-a start end)
+             [b]    (c/slice cycl-b start end)
              params (cond
                       (nil? b) (:params a)
                       (nil? a) (:params b)
@@ -148,15 +148,28 @@
         b [{:start 1/4 :length 1/2 :params {:init :b1}}
            {:start 1/2 :length 1/2 :params {:init :b2}}]]
     (merge-cycles-split u/set* a b))
+
+  (let [a [{:start 0 :length 1 :params {:init :a}}]
+        b [{:start 0 :length 1/4 :params {:init :b1}}
+           {:start 1/4 :length 1/4 :params {:init :b2}}]]
+    (merge-cycles-split u/set* a b))
+
   (let [a [{:start 0 :length 1/2 :params {:init :a}}]
         b [{:start 1/2 :length 1/2 :params {:init :b}}]]
     (merge-cycles-split u/set* a b))
+
   (let [a [{:start 1/3 :length 1/3 :params {:init :a}}]
         b [{:start 0 :length 1/2 :params {:init :b1}}
            {:start 1/2 :length 1/2 :params {:init :b2}}]]
     (merge-cycles-split u/set* a b))
+
   (let [a [{:start 0 :length 1/3 :params {:init :a1}}
            {:start 1/3 :length 1/3 :params {:init :a2}}
            {:start 2/3 :length 1/3 :params {:init :a3}}]
         b [{:start 0 :length 1/2 :params {:init :b}}]]
+    (merge-cycles-split u/set* a b))
+
+  (let [a [{:start 0 :length 1 :params {:s :a}}]
+        b [{:start 0 :length 1/2 :params {:n :b}}
+           {:start 1/2 :length 1/2 :params {:n :b}}]]
     (merge-cycles-split u/set* a b)))

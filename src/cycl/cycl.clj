@@ -20,19 +20,20 @@
   (cycl? [{:start 0 :period 1}]))
 
 
-(defn slice-starts
-  [cycl from length]
-  (->> cycl
-       (drop-while #(< (e/start %) from))
-       (take-while #(< (e/start %) (+ from length)))))
+(defn slice
+  [cycl start length]
+  (let [end (+ start length)]
+    (->> cycl
+         (drop-while #(<= (e/end %) start))
+         (take-while #(< (e/start %) end))
+         (map (fn [e]
+                (-> e
+                    (assoc :trigger? (>= (e/start e) start))
+                    (assoc :part [(max start (e/start e))
+                                  (min end (e/end e))])
+                    (assoc :whole [(e/start e)
+                                   (e/end e)])))))))
 
-
-(defn slice-active
-  ;; TODO: Whole/part
-  [cycl from end]
-  (->> cycl
-       (drop-while #(<= (e/end %) from))
-       (take-while #(< (e/start %) end))))
 
 
 (defn offset [cycl amount]
@@ -67,7 +68,12 @@
     (map (fn [evt]
            (-> evt
                (update :start xer)
-               (update :length xer)))
+               (update :length xer)
+               (update-in [:whole 0] xer)
+               (update-in [:whole 1] xer)
+               (update-in [:part 0] xer)
+               (update-in [:part 1] xer)
+               ))
          cycl)))
 
 
@@ -80,7 +86,8 @@
      (for [evt cycl]
        (-> evt
            (update :start #(+ beg (* (- % orig-start) factor)))
-           (update :length #(* % factor)))))))
+           (update :length #(* % factor))))
+     (slice beg len))))
 
 
 (defn realize-cycl

@@ -18,7 +18,7 @@
 (def default-host "localhost")
 (def default-cps 1)
 (def default-latency-s 0.1)
-(def tick-dur 1/10)
+(def tick-dur 1/2 #_1/10)
 
 (defn cps->bpm [cps]
   (* cps 60.0))
@@ -111,16 +111,6 @@
     modo))
 
 
-(defn get-slice [pat cycle-num]
-  (let [period (p/period pat)
-        from   (mod cycle-num period)
-        slc    (p/gen pat from tick-dur)
-        slc    (map #(assoc % :trigger-after (- (:start %) from)) slc)]
-    (when (seq slc)
-      (when @verbose
-        (println from 1 (mapv #(select-keys % [:start :s :n]) slc)))
-      slc)))
-
 (defn apply-timing
   ([slc]
    (let [now (at/now)]
@@ -132,15 +122,29 @@
         slc)))
 
 
+(defn get-slice [pat cycle-num]
+  (let [period (p/period pat)
+        from   (mod cycle-num period)
+        slc    (->> (p/gen pat from tick-dur)
+                    (filter :trigger?)
+                    (map #(assoc % :trigger-after (- (:start %) from))))
+        timed    (apply-timing slc cycle-num)]
+    (when (seq timed)
+      (when @verbose
+        (println from 1 (mapv #(select-keys % [:start :s :n]) timed)))
+      timed)))
+
+
+
 (defn tick
   ([] (tick (*clock*)))
   ([cycle-num]
    (doseq [[layer pat] @layers]
      #_future
      (let [slc (get-slice pat cycle-num)
-           slc (apply-timing slc cycle-num)
            ctx {:cycle-num cycle-num :layer layer}
-           slc (c/realize-cycl slc ctx)]
+           slc (c/realize-cycl slc ctx)
+           _ (println slc)]
        (when (and (not @sh) (seq slc))
          (dispatch* slc ctx))))
    (let [next-cycle (+ cycle-num tick-dur)
@@ -261,7 +265,7 @@
 (defn o
   [n & pats]
   (if (seq pats)
-    (swap! layers assoc n (hoist-merge pats))
+    (swap! layers assoc n (apply ops/+| pats))
     (swap! layers dissoc n))
   (speak!))
 
