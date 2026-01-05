@@ -18,7 +18,7 @@
 (def default-host "localhost")
 (def default-cps 1)
 (def default-latency-s 0.1)
-(def tick-dur 1/2 #_1/10)
+(def tick-dur 1 #_1/10)
 
 (defn cps->bpm [cps]
   (* cps 60.0))
@@ -125,7 +125,7 @@
 (defn get-slice [pat cycle-num]
   (let [period (p/period pat)
         from   (mod cycle-num period)
-        slc    (->> (p/gen pat from tick-dur)
+        slc    (->> (p/gen pat from (+ from tick-dur))
                     (filter :trigger?)
                     (map #(assoc % :trigger-after (- (:start %) from))))
         timed    (apply-timing slc cycle-num)]
@@ -143,8 +143,7 @@
      #_future
      (let [slc (get-slice pat cycle-num)
            ctx {:cycle-num cycle-num :layer layer}
-           slc (c/realize-cycl slc ctx)
-           _ (println slc)]
+           slc (c/realize-cycl slc ctx)]
        (when (and (not @sh) (seq slc))
          (dispatch* slc ctx))))
    (let [next-cycle (+ cycle-num tick-dur)

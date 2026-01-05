@@ -7,7 +7,7 @@
 
 
 (defprotocol Pattern
-  (gen [this start length])
+  (gen [this from to])
   (period [this])
   (weight [this]))
 
@@ -38,22 +38,26 @@
 
 (defrecord Pure [value]
   Pattern
-  (gen [_ start length]
-    (let [i-start (long (Math/floor start))]
+  (gen [_ from to]
+    (let [i-start (long (Math/floor from))]
       (-> (map #(e/->event value % 1) (iterate inc i-start))
-          (c/slice start length))))
+          (c/slice from to))))
   (period [_] 1)
   (weight [_] 1))
 
 
 (comment
-  (gen (->Pure :a) 1/2 2))
+  (gen (->Pure :a) 0 1)
+  (gen (->Pure :a) 1 2)
+  (gen (->Pure :a) 1/2 1)
+  (gen (->Pure :a) 1/2 3/2)
+  )
 
 
 (defrecord Lit [events p w]
   Pattern
-  (gen [this start length]
-    (let [i-start (iter-start start (period this))]
+  (gen [this from to]
+    (let [i-start (iter-start from (period this))]
       (->
        (mapcat
         (fn [cycl iter]
@@ -61,7 +65,7 @@
             (-> evt (update :start #(+ % iter)))))
         (repeat events)
         (iterate #(+ % p) i-start))
-       (c/slice start length))))
+       (c/slice from to))))
   (period [_] p)
   (weight [_] w))
 
@@ -76,7 +80,7 @@
     (-> (mapcat
          (fn [pat weight offset]
            (let [sub-iter-no (quot offset n)
-                 sub-pat     (gen pat sub-iter-no 1)]
+                 sub-pat     (gen pat sub-iter-no (inc sub-iter-no))]
              (for [evt sub-pat]
                (tx-evt evt offset weight n))))
          (cycle pats)
@@ -85,34 +89,39 @@
 
 
 (defrecord Fit [pats]
+  ;; FIXME: Fit behaves unpredictably with periods > 1
   Pattern
-  (gen [this start length]
-    (if (seq pats)
-      (let [i-start (iter-start (long start) (period this))]
-        (->
-         (arrange
-          (fn [evt offset weight n]
-            (let [[_ frac] (u/mixed (e/start evt))
-                  scale    (/ n)]
-              (-> evt
-                  (assoc :start (+ i-start (* offset scale) (* frac scale weight)))
-                  (update :length #(* % scale weight)))))
-          pats)
-         (c/slice start length)))
-      []))
+  (gen [this from to]
+    (case (count pats)
+      0 []
+      1 (gen (first pats) from to)
+      (let [i-start (iter-start (long from) (period this))
+            cycl    (arrange
+                     (fn [evt offset weight n]
+                       (let [[_ frac] (u/mixed (e/start evt))
+                             scale    (/ n)]
+                         (-> evt
+                             (assoc :start (+ i-start (* offset scale) (* frac scale weight)))
+                             (update :length #(* % scale weight)))))
+                     pats)]
+        (c/slice cycl from to))))
   (period [_] (lcp pats))
   (weight [_] 1))
 
 
 
 (comment
+  (gen (->Fit [(->pat :a)]) 0 1)
+  (gen (->Fit (map ->pat [:a :b])) 0 1)
+  (gen (->Fit [(->pat :a)]) 1 3/2)
+  (gen (->Fit [(->pat :a)]) 1 3/2)
   (gen (->Fit [(->pat :a)]) 1 3/2))
 
 
 (defrecord Speed [x pat]
   Pattern
-  (gen [_ start length]
-    (-> (gen pat (* start x) (* length x))
+  (gen [_ from to]
+    (-> (gen pat (* from x) (* to x))
         (c/scale (/ x))
         (->> (map (fn [e] (e/update-param e :period #(* (or % 1) (/ x))))))))
   (period [_] (/ (period pat) x))
@@ -121,35 +130,23 @@
 
 (comment
   (gen
-   (->Speed 1/3 (->Pure :a))
+   (->Speed 1/2 (->Fit (map ->pat (range 7))))
    1 2))
-
-
-(defn ->pat [x]
-  (cond
-    (satisfies? Pattern x) x
-    (sequential? x)        (if (c/cycl? x)
-                             (->Lit x 1 1)
-                             (->Fit (map ->pat x)))
-    (nil? x)               (->Fit [])
-    :else                  (->Pure x)))
-
 
 
 (defrecord Cyc [pats]
   Pattern
-  (gen [this start length]
+  (gen [this from to]
     (if (seq pats)
-      (let [i-start (iter-start (long start) (period this))]
-        (->
-         (arrange
-          (fn [evt offset weight n]
-            (let [[_ frac] (u/mixed (e/start evt))]
-              (-> evt
-                  (assoc :start (+ i-start offset (* frac weight)))
-                  (update :length #(* % weight)))))
-          pats)
-         (c/slice start length)))
+      (let [i-start (iter-start (long from) (period this))
+            cycl    (arrange
+                     (fn [evt offset weight n]
+                       (let [[_ frac] (u/mixed (e/start evt))]
+                         (-> evt
+                             (assoc :start (+ i-start offset (* frac weight)))
+                             (update :length #(* % weight)))))
+                     pats)]
+        (c/slice cycl from to))
       []))
   (period [_] (let [top-p (weigh pats)]
                 (* top-p (lcp pats))))
@@ -158,8 +155,8 @@
 
 (defrecord Times [n pat]
   Pattern
-  (gen [_ start length]
-    (-> (gen pat (* start n) (* n length))
+  (gen [_ from to]
+    (-> (gen pat (* from n) (* to n))
         (c/scale (/ n))))
   (period [_] (period pat))
   (weight [_] (weight pat)))
@@ -171,21 +168,21 @@
 
 (defrecord Elongate [x pat]
   Pattern
-  (gen [_ start length] (gen pat start length))
+  (gen [_ from to] (gen pat from to))
   (period [_] (period pat))
   (weight [_] (* x (weight pat))))
 
 
 (defrecord Repeat [n pat]
   Pattern
-  (gen [_ start length] (gen (->Times n pat) start length))
+  (gen [_ from to] (gen (->Times n pat) from to))
   (period [_] 1)
   (weight [_] (* n (weight pat))))
 
 
 (defrecord Splice [pats]
   Pattern
-  (gen [_ start length] (gen (->Fit pats) start length))
+  (gen [_ from to] (gen (->Fit pats) from to))
   (period [_] 1) ;; ?
   (weight [_] (weigh pats)))
 
@@ -194,12 +191,12 @@
   ;; TODO: Semi Deterministic in case we need to take in multiple slices?
   ;; And if so, how to ensure randomness when desired?
   Pattern
-  (gen [_ start length]
+  (gen [_ from to]
     (map
      (fn [e]
        (if (< (rand) p) e
            (e/assoc-param :init nil)))
-     (gen pat start length)))
+     (gen pat from to)))
   (period [_] (period pat))
   (weight [_] (weight pat)))
 
@@ -208,32 +205,32 @@
   ;; TODO: Too deterministic?
   ;; And if so, how to ensure randomness when desired?
   Pattern
-  (gen [_ start length]
+  (gen [_ from to]
     (let [pat-period (period pat)]
       (map
        (fn [e]
          (let [cycle-num (quot (e/start e) pat-period)
                keep?     (< (u/seeded-rand cycle-num) p)]
            (if keep? e (e/assoc-param e :init nil))))
-       (gen pat start length))))
+       (gen pat from to))))
   (period [_] (period pat))
   (weight [_] (weight pat)))
 
 
 (defrecord Pick [pats]
+  ;; FIXME: This isn't right
   ;; TODO: Semi Deterministic in case we need to take in multiple slices?
   ;; And if so, how to ensure randomness when desired?
   Pattern
-  (gen [this start length]
+  (gen [this from to]
     (let [p       (period this)
-          i-start (iter-start start p)]
-      (->
-       (mapcat
-        (fn [iter-no]
-          (let [lucky (rand-nth pats)]
-            (gen lucky iter-no p)))
-        (iterate #(+ % p) i-start))
-       (c/slice start length))))
+          i-start (iter-start from p)
+          cycl    (mapcat
+                (fn [iter-no]
+                  (let [lucky (rand-nth pats)]
+                    (gen lucky iter-no p)))
+                (iterate #(+ % p) i-start))]
+      (c/slice cycl from to)))
   (period [_] (period (first pats)))
   (weight [_] (weight (first pats))))
 
@@ -253,22 +250,20 @@
 
 (defrecord Euclid [k n r pat]
   Pattern
-  (gen [_ start length]
-    (let [mask            (bjork (repeat k [true]) (repeat (- n k) [nil]))
-          mask            (u/rot mask (or r 0))
-          children        (map #(and % pat) mask)]
-      (gen
-       (->Fit (map ->pat children))
-       start length)))
+  (gen [_ from to]
+    (let [mask     (bjork (repeat k [true]) (repeat (- n k) [nil]))
+          mask     (u/rot mask (or r 0))
+          children (map #(if % pat (->Pure nil)) mask)]
+      (gen (->Fit children) from to)))
   (weight [_] 1)
   (period [_] 1))
 
 
 (defrecord Reverse [pat]
   Pattern
-  (gen [this start length]
+  (gen [this from to]
     (let [p    (period this)
-          evts (gen pat start length)]
+          evts (gen pat from to)]
       (-> (map
            (fn [evt]
              (let [evt-start  (e/start evt)
@@ -284,16 +279,16 @@
                (assoc evt :start new-start)))
            evts)
           (c/sort-cycl)
-          (c/slice start length))))
+          (c/slice from to))))
   (period [_] (period pat))
   (weight [_] (weight pat)))
 
 
 (defrecord Control [param value-tx pat]
   Pattern
-  (gen [_ start length]
+  (gen [_ from to]
     (map (fn [e] (e/reassoc-param e :init param #(v/->Realize+Apply value-tx %)))
-         (gen pat start length)))
+         (gen pat from to)))
   (period [_] (period pat))
   (weight [_] (weight pat)))
 
@@ -317,7 +312,7 @@
                starts           (reductions + 0 weighted-lengths)]
            (mapcat
             (fn [c s l]
-              (c/translate c (+ s iter) l))
+              (c/translate c (+ s iter) (+ s iter l)))
             cycls
             starts
             weighted-lengths)))
@@ -325,30 +320,30 @@
 
 
 (defn round-trip
-  [op arg cycl mp]
+  [op arg cycl period]
   (let [start (c/start cycl)
-        len   (c/length cycl)
+        end   (c/end cycl)
         pat  (->Lit (c/translate cycl 0 1) 1 1)
         op   (op arg pat)]
     (-> op
         spin 
-        (c/translate start len)
-        (->Lit mp (weight op)))))
+        (c/translate start end)
+        (->Lit period (weight op)))))
 
 
 (defrecord OpMerge [op arg-pat val-pat]
   ;; TODO: Could this be simpler?
   Pattern
-  (gen [_ start length]
-    (let [arg-cycl (gen arg-pat start length)
-          val-cycl (gen val-pat start length)
-          mp       (long (Math/ceil (+ start length)))]
+  (gen [_ from to]
+    (let [arg-cycl (gen arg-pat from to)
+          val-cycl (gen val-pat from to)
+          period   (long (Math/ceil to))]
       (-> (map
            (fn [arg-evt]
              (let [arg     (e/get-init arg-evt)
-                   overlap (c/slice val-cycl (e/start arg-evt) (e/length arg-evt))
+                   overlap (c/slice val-cycl (e/start arg-evt) (e/end arg-evt))
                    overlap (filter :trigger? overlap)]
-               (round-trip op arg overlap mp)))
+               (round-trip op arg overlap period)))
            arg-cycl)
           re-weight)))
   (period [_] (lcp [arg-pat val-pat]))
@@ -361,9 +356,9 @@
 
 (defrecord EventMergeLeft [merge-fn pats]
   Pattern
-  (gen [_ start length]
+  (gen [_ from to]
     (if (seq pats) 
-      (let [cycls (map #(gen % start length) pats)]
+      (let [cycls (map #(gen % from to) pats)]
         (reduce (fn [merged cycl] (m/merge-cycles-left merge-fn merged cycl)) cycls))
       []))
   (period [_] (lcp pats))
@@ -372,12 +367,12 @@
 
 (defrecord EventMergeSplit [merge-fn pats]
   Pattern
-  (gen [_ start length]
+  (gen [_ from to]
     (if (seq pats) 
       (->
-       (let [cycls (map #(gen % start length) pats)]
+       (let [cycls (map #(gen % from to) pats)]
          (reduce (fn [merged cycl] (m/merge-cycles-split merge-fn merged cycl)) cycls))
-       (c/slice start length))
+       (c/slice from to))
       []))
   (period [_] (lcp pats))
   (weight [_] (apply max (map weight pats))))
@@ -386,9 +381,9 @@
 
 (defrecord Stack [pats]
   Pattern
-  (gen [_ start length]
+  (gen [_ from to]
     (->> pats
-         (mapcat #(gen % start length))
+         (mapcat #(gen % from to))
          (c/sort-cycl)))
   (period [_] (lcp pats))
   (weight [_] 1))
@@ -396,8 +391,8 @@
 
 (defrecord Chop [n pat]
   Pattern
-  (gen [_ start length]
-    (let [evts (gen pat start length)]
+  (gen [_ from to]
+    (let [evts (gen pat from to)]
       (mapcat
        (fn [evt]
          (let [evt-start  (e/start evt)
@@ -425,9 +420,9 @@
 
 (defrecord Striate [n pat]
   Pattern
-  (gen [_ start length]
+  (gen [_ from to]
     (let [inner-p (period pat)
-          evts    (gen pat start length)]
+          evts    (gen pat from to)]
       (map
        (fn [evt]
          (let [evt-start   (e/start evt)
@@ -448,9 +443,9 @@
 
 (defrecord StriatBy [n len pat]
   Pattern
-  (gen [_ start length]
+  (gen [_ from to]
     (let [inner-p (period pat)
-          evts    (gen pat start length)]
+          evts    (gen pat from to)]
       (map
        (fn [evt]
          (let [evt-start   (e/start evt)

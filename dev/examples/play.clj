@@ -6,6 +6,7 @@
    [cycl.merge :as m]
    [cycl.util :refer [toggle!] :as u]
    [cycl.ing :as c :refer [start! shutdown! o once sh! pause! now!]]
+   [cycl.cycl :as cycl]
    [cycl.ops :refer :all]
    [cycl.dirt :refer [connect-dirt]]
    [clojure.pprint :refer [print-table]]
@@ -34,7 +35,7 @@
 ;; Play once in time
 (once (s :hh :sd))
 
-;; Notice the difference
+;; Play once instantly
 (now! (s :hh :sd))
 
 
@@ -43,6 +44,17 @@
 (o 0 (s :bd [:hh :sd]))
 (o 0 (s :bd (x 4 :sd)))
 (o 0)
+
+(o 0 (+| (s :bd) (n (range 4))))
+
+(spin*
+ (+| (s :bd) (n (range 4))))
+
+
+(cycl/realize-cycl
+ (p/gen (+| (s :bd) (n (range 4))) 1/2 1/2)
+ {})
+
 
 ;; Add a pattern on another layer
 (o 1 (s :supersaw) (nt :c :c# :d :d#))
@@ -58,6 +70,7 @@
 (o 1)
 
 (now! (s :supermandolin) (jux rev (nt (mu/scale :c :minor :o 2 :incl 1))))
+
 (once (s :piano) (n 3) (nt (set (mu/chord :cm :incl 1))))
 
 (now! (s :piano) (n 3) (s| (nt #{:c :e} :d :e)))
@@ -66,8 +79,6 @@
 (o 2 (nt (->> (mu/scale :c :minor) (slow 2))) (s :supermandolin) (room 2)) ;; TODO: Timing is wrong
 (o 2)
 
-(evts
- (->> (mu/scale :c :minor) (slow 2)))
 
 (c/start!)
 (c/clear-pattern!)

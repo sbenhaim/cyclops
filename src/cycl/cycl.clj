@@ -21,18 +21,17 @@
 
 
 (defn slice
-  [cycl start length]
-  (let [end (+ start length)]
-    (->> cycl
-         (drop-while #(<= (e/end %) start))
-         (take-while #(< (e/start %) end))
-         (map (fn [e]
-                (-> e
-                    (assoc :trigger? (>= (e/start e) start))
-                    (assoc :part [(max start (e/start e))
-                                  (min end (e/end e))])
-                    (assoc :whole [(e/start e)
-                                   (e/end e)])))))))
+  [cycl from to]
+  (->> cycl
+       (drop-while #(<= (e/end %) from))
+       (take-while #(< (e/start %) to))
+       (map (fn [e]
+              (-> e
+                  (assoc :trigger? (>= (e/start e) from))
+                  (assoc :part [(max from (e/start e))
+                                (min to (e/end e))])
+                  (assoc :whole [(e/start e)
+                                 (e/end e)]))))))
 
 
 
@@ -78,16 +77,17 @@
 
 
 (defn translate
-  [cycl beg len]
-  (let [orig-start (start cycl)
+  [cycl from to]
+  (let [len (- to from)
+        orig-start (start cycl)
         orig-len   (length cycl)
         factor     (/ len orig-len)]
     (->
      (for [evt cycl]
        (-> evt
-           (update :start #(+ beg (* (- % orig-start) factor)))
+           (update :start #(+ from (* (- % orig-start) factor)))
            (update :length #(* % factor))))
-     (slice beg len))))
+     (slice from to))))
 
 
 (defn realize-cycl

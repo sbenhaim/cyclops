@@ -131,15 +131,15 @@
 (defn merge-cycles-split
   [merge-fn cycl-a cycl-b]
   (let [slices (slices cycl-a cycl-b)]
-    (map
+    (mapcat
      (fn [[start end]]
-       (let [[a]    (c/slice cycl-a start end)
-             [b]    (c/slice cycl-b start end)
-             params (cond
-                      (nil? b) (:params a)
-                      (nil? a) (:params b)
-                      :else    (merge-with merge-fn (:params a) (:params b)))]
-         (e/->event params start (- end start))))
+       (for [a    (c/slice cycl-a start end)
+             b    (c/slice cycl-b start end)]
+         (let [params (cond
+                        (nil? b) (:params a)
+                        (nil? a) (:params b)
+                        :else    (merge-with merge-fn (:params a) (:params b)))]
+           (e/->event params start (- end start)))))
      slices)))
 
 

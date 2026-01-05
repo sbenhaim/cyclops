@@ -1,12 +1,13 @@
 (ns cycl.ops
   "(👁️)"
   (:require
-   [cycl.pattern :as p :refer [spin ->pat]]
+   [cycl.pattern :as p :refer [spin]]
    [cycl.merge :as m]
    [cycl.music :as mu]
    [cycl.event :as e]
    [cycl.cycl :as c]
-   [cycl.val :as v]))
+   [cycl.val :as v]
+   [cycl.util :as u]))
 
 
 (defn spin*
@@ -15,11 +16,36 @@
 
 ;; ops
 
+(defn ->pat [x]
+  (cond
+    (satisfies? p/Pattern x) x
+    (c/cycl? x)              (p/->Lit x 1 1)
+    (sequential? x)          (if (= 1 (count x))
+                               (->pat (first x))
+                               (p/->Fit (map ->pat x)))
+    :else                    (p/->Pure x)))
+
 (defn fit [& pat]
-  (p/->Fit (map ->pat pat)))
+  (->pat pat))
+
+
+(comment
+  (fit 1 2 3)
+  (fit [1 2 3])
+  (spin* (fit 1 2 3))
+  (spin* (fit (range 3)))
+  )
 
 (defn cyc [& pat]
   (p/->Cyc (map ->pat pat)))
+
+
+(comment
+  (cyc 1 2 3)
+  (cyc (range 3))
+  (spin* (cyc 1 2 3))
+  (spin* (cyc (range 3)))
+  )
 
 (defn x [n & pat]
   (p/->OpMerge p/->Times (->pat n) (->pat pat)))
@@ -70,7 +96,6 @@
 
 (defn rev [& pat]
   (p/->Reverse (->pat pat)))
-
 
 (comment
   (spin
